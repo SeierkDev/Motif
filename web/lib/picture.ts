@@ -45,18 +45,20 @@ export function usePicture() {
       const res = await fetch(`${API}/v1/images`, { method: 'POST', body: file })
       const body = (await res.json()) as { url?: string; error?: string }
       if (!res.ok || !body.url) throw new Error(body.error ?? `HTTP ${res.status}`)
-      // The contract records https and ipfs only, because a browser will not
-      // load an http image on an https page and a link on an immutable log
-      // that nothing will ever load is worse than no link.
-      if (!body.url.startsWith('https://')) {
-        setImage('')
-        setPreview(body.url)
-        setError(
-          'The api is not on https, so this picture cannot be recorded on chain. ' +
-            'That is only ever true locally.',
-        )
-        return
-      }
+      /*
+       * http is usable, and only the on chain route refuses it.
+       *
+       * The contract records https and ipfs only, because a browser will not
+       * load an http image on an https page and a link in an immutable log
+       * that nothing will ever load is worse than no link. That reasoning is
+       * about the log. A picture kept with the api is served from the same
+       * origin the page is already calling for its data, so if the api is
+       * reachable at all its images are too.
+       *
+       * This used to blank the picture outright, which meant a local api made
+       * the field look broken rather than making one route unavailable. Now
+       * the url is kept and `onChainSafe` says which routes can take it.
+       */
       setImage(body.url)
       setPreview(body.url)
     } catch (e) {
@@ -72,5 +74,15 @@ export function usePicture() {
     setError(null)
   }
 
-  return { image, preview, uploading, error, upload, clear }
+  /*
+   * Whether this url can go in the log, as opposed to only into the api.
+   *
+   * `_checkImage` on the router accepts https and ipfs and reverts on anything
+   * else, so passing an http url to a router that does take pictures fails the
+   * whole launch. The caller needs to know before it picks which overload to
+   * call, and it cannot tell from the url alone what the router will accept.
+   */
+  const onChainSafe = image.startsWith('https://') || image.startsWith('ipfs://')
+
+  return { image, preview, uploading, error, upload, clear, onChainSafe }
 }

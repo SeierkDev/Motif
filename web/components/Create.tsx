@@ -171,7 +171,9 @@ export function Create() {
             'Could not reach the chain to check whether a picture can be recorded. Nothing was sent. Try again.',
           )
         }
-        onChain = takes
+        // A router that takes pictures still reverts on a url that is not https
+        // or ipfs, so both have to be true for the log to be the destination.
+        onChain = takes && pic.onChainSafe
       }
       const base = [
         addresses.usdg,
@@ -217,10 +219,13 @@ export function Create() {
         try {
           const signature = await signMessageAsync({ message: pictureMessage(id, pic.image) })
           await setMotifPicture(id, pic.image, signature)
-        } catch {
-          setPicNote(
-            'The motif published, but the picture was not attached. Open it and try again from its page.',
-          )
+        } catch (e: unknown) {
+          // The reason is carried through rather than swallowed. "It did not
+          // work" sends somebody to the wrong place; a refused signature, a
+          // rejected url and an unreachable api are three different problems
+          // and only the message tells them apart.
+          const why = e instanceof Error ? (e.message.split('\n')[0] ?? '').slice(0, 140) : String(e)
+          setPicNote(`The motif published, but the picture was not attached: ${why}`)
         }
       }
 

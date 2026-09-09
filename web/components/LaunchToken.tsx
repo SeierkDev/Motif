@@ -86,6 +86,7 @@ export function LaunchToken() {
    */
   const [cap, setCap] = useState<number | null | undefined>(undefined)
   const [busy, setBusy] = useState<string | null>(null)
+  const [picDropped, setPicDropped] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [launched, setLaunched] = useState<`0x${string}` | null>(null)
 
@@ -207,8 +208,31 @@ export function LaunchToken() {
         name.trim(),
         symbol.trim().toUpperCase(),
         description.trim(),
-        pic.image,
+        /*
+         * Only a url the contract will accept.
+         *
+         * `_checkImage` on the factory takes https and ipfs and reverts with
+         * BadImage on anything else, and a revert here is not reported as one:
+         * the gas estimate fails, viem falls back to the block gas limit, and
+         * this chain's limit is large enough that the wallet then refuses with
+         * "the total cost exceeds the balance of the account". A picture the
+         * contract dislikes therefore surfaces as the launcher being broke,
+         * which is a long way from the cause.
+         *
+         * Unlike a motif there is no second home for it here, because the
+         * off chain association is keyed on a motif id and a curve is keyed on
+         * its own address. So the launch goes ahead without the picture and
+         * says so, rather than failing. Only ever reachable against an api on
+         * plain http, which means locally.
+         */
+        pic.onChainSafe ? pic.image : '',
       ]
+
+      if (pic.image && !pic.onChainSafe) {
+        setPicDropped(
+          'The api is not on https, so this token launched without its picture. That is only ever true locally.',
+        )
+      }
 
       setBusy('Launching')
       // One transaction, not a launch and then a buy. Between those two the
@@ -576,6 +600,12 @@ export function LaunchToken() {
         {error && (
           <div className="notice bad" style={{ marginTop: 12 }}>
             {error}
+          </div>
+        )}
+
+        {picDropped && (
+          <div className="notice" style={{ marginTop: 12 }}>
+            {picDropped}
           </div>
         )}
 
