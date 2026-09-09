@@ -194,10 +194,6 @@ contract SandwichForkTest is Test {
         return (wei_ * int256(NVDA_PRICE) * 100) / 1e18;
     }
 
-    function _sign(int256 v) internal pure returns (string memory) {
-        return v < 0 ? string.concat("-", vm.toString(uint256(-v))) : vm.toString(uint256(v));
-    }
-
     /**
      * Sweep the front run size on a ladder and keep the best outcome.
      *
@@ -209,20 +205,26 @@ contract SandwichForkTest is Test {
      */
     function _best(uint256 nvdaAmount, uint16 slippageBps)
         internal
-        returns (int256 bestCents, uint256 bestSize, uint256 reverted)
+        returns (bool any, int256 bestCents, uint256 bestSize, uint256 reverted)
     {
         uint256[8] memory ladder = [
             nvdaAmount / 2, nvdaAmount, nvdaAmount * 3, nvdaAmount * 10,
             nvdaAmount * 30, nvdaAmount * 100, nvdaAmount * 300, nvdaAmount * 1000
         ];
-        bestCents = type(int256).min;
+        // No sentinel for "nothing landed". The previous version seeded this with
+        // type(int256).min and left it there when every rung reverted, and the
+        // formatter then negated it, which is the one value int256 cannot negate:
+        // the whole test panicked with an arithmetic overflow on a run where the
+        // floor happened to reject all eight. A bool says the same thing and
+        // cannot be mistaken for a measurement.
         for (uint256 i; i < ladder.length; ++i) {
             if (ladder[i] == 0) continue;
             uint256 snap = vm.snapshotState();
             _position(nvdaAmount, slippageBps);
             try this.attempt(ladder[i]) returns (int256 profitWei) {
                 int256 c = _cents(profitWei);
-                if (c > bestCents) {
+                if (!any || c > bestCents) {
+                    any = true;
                     bestCents = c;
                     bestSize = ladder[i];
                 }
@@ -254,17 +256,21 @@ contract SandwichForkTest is Test {
         console.log("  position   slippage   best front run   attacker profit, cents   reverted");
         console.log("  ---------------------------------------------------------------------------");
 
-        int256 mostTaken = type(int256).min;
+        bool anyLanded;
+        int256 mostTaken;
         for (uint256 s; s < sizes.length; ++s) {
             for (uint256 t; t < slippages.length; ++t) {
-                (int256 cents, uint256 size, uint256 reverted) = _best(sizes[s], slippages[t]);
-                if (cents > mostTaken) mostTaken = cents;
+                (bool any, int256 cents, uint256 size, uint256 reverted) = _best(sizes[s], slippages[t]);
+                if (any && (!anyLanded || cents > mostTaken)) {
+                    anyLanded = true;
+                    mostTaken = cents;
+                }
                 console.log(
                     string.concat(
                         "  $", vm.toString((sizes[s] * NVDA_PRICE) / 1e18),
                         "      ", vm.toString(uint256(slippages[t])), " bps",
-                        "     ", vm.toString(size / 1e18), " NVDA",
-                        "        ", _sign(cents),
+                        "     ", any ? vm.toString(size / 1e18) : "-", " NVDA",
+                        "        ", any ? vm.toString(cents) : "none landed",
                         "                ", vm.toString(reverted), "/8"
                     )
                 );
@@ -272,10 +278,17 @@ contract SandwichForkTest is Test {
         }
 
         console.log("");
-        console.log("  best an attacker did, in cents, over every size and setting:");
-        console.log(_sign(mostTaken));
 
-        // Negative means every sandwich in the sweep lost the attacker money.
+        // A cell where every rung reverted is a real outcome and a good one: the
+        // victim's floor refused the push at every size. A whole sweep of them is
+        // not, because then nothing was measured and the assertion below would
+        // pass on an empty result. Those two must not read the same.
+        assertTrue(anyLanded, "no sandwich completed at any size or setting, so nothing was measured");
+
+        console.log("  best an attacker did, in cents, over every size and setting:");
+        console.log(vm.toString(mostTaken));
+
+        // Negative means every sandwich that completed lost the attacker money.
         assertLt(mostTaken, 0, "a rebalance became profitable to sandwich");
     }
 
