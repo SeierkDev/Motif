@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAccount, useConnect, useDisconnect, useReadContract, useSwitchChain } from 'wagmi'
 import { activeChain } from '@/lib/chain'
-import { addresses, basketRouterAbi, sourceUrl, xUrl } from '@/lib/contracts'
+import { addresses, basketRouterAbi, sourceUrl, TOKEN_ADDRESS, tokenUrl, xUrl } from '@/lib/contracts'
 
 const NAV = [
   { href: '/', label: 'Explore' },
@@ -248,6 +248,21 @@ export function Header() {
           >
             <Burger open={open} />
           </button>
+
+          {/* The token contract, on the bar rather than only in the footer.
+              Truncated because 42 characters do not fit next to the nav, and
+              carrying the full value on the title so it can still be read. */}
+          <a
+            className="ca"
+            href={tokenUrl}
+            target="_blank"
+            rel="noopener"
+            title={TOKEN_ADDRESS}
+            aria-label={`MOTIF contract ${TOKEN_ADDRESS}`}
+          >
+            <span className="ca-k">CA</span>
+            <span className="ca-v">{`${TOKEN_ADDRESS.slice(0, 6)}…${TOKEN_ADDRESS.slice(-4)}`}</span>
+          </a>
 
           {/* Rendered only when there is somewhere real to point. See sourceUrl. */}
           {sourceUrl && (

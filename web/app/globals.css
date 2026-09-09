@@ -1061,3 +1061,20 @@ th.n { text-align: right; }
    In the swatch row they were indented its width plus the gap, which left the
    label pointing at empty space. */
 .picbtns { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 14px; }
+
+/* The token contract on the header bar.
+
+   A pill rather than an icon, because an address is only useful if it can be
+   read, and an icon would say nothing about what it points at. It hides below
+   the breakpoint that stacks the nav, where there is no room for it and the
+   footer carries the same link. */
+.ca {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border: 1px solid var(--line-2); border-radius: 8px;
+  font-family: var(--mono); font-size: 12px; line-height: 1;
+  color: var(--dim); background: rgba(204, 255, 51, .04);
+}
+.ca:hover { color: var(--text); border-color: var(--accent) }
+.ca-k { color: var(--accent); letter-spacing: .12em }
+.ca-v { letter-spacing: .02em }
+@media (max-width: 735px) { .ca { display: none } }

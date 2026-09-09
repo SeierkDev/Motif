@@ -15,6 +15,12 @@
 </p>
 
 <p align="center">
+  <b>MOTIF</b> · <code>0x89565a7BBfddab021844e2f66a79852e46C802df</code><br/>
+  <a href="https://www.ponsfamily.com/launchpad/0x89565a7BBfddab021844e2f66a79852e46C802df">Trade on Pons</a> ·
+  <a href="https://motif.fund">motif.fund</a>
+</p>
+
+<p align="center">
   <a href="#what-this-is">What this is</a> ·
   <a href="#the-custody-claim">Custody</a> ·
   <a href="#architecture">Architecture</a> ·
