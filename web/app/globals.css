@@ -281,7 +281,11 @@ label { display: block; font-size: 12px; font-family: var(--mono);
 @media (min-width: 980px) {
   .intro {
     grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
-    gap: 56px; align-items: center;
+    gap: 56px;
+    /* Top, not centre. Centred against a hero this tall put the panel halfway
+       down the copy, level with the second paragraph rather than the headline,
+       which reads as two blocks that missed each other. */
+    align-items: start;
   }
   /* 52 on top of `.view`'s 22 is 74 from the header, which is the top padding
      `.hero` on /how has always used. It was 28, and 28 under a full width rule
@@ -1052,3 +1056,8 @@ th.n { text-align: right; }
 .intro-wait { min-height: 420px; }
 
 @media (max-width: 900px) { .intro-wait { min-height: 300px; } }
+
+/* The picture buttons sit under their own label rather than beside the preview.
+   In the swatch row they were indented its width plus the gap, which left the
+   label pointing at empty space. */
+.picbtns { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 14px; }

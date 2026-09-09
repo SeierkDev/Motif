@@ -89,6 +89,8 @@ type Stats = {
   graduated: number
   volumeIn: string
   raisedOnCurves: string
+  averageMoveBps: number | null
+  movingMotifs: number
 }
 
 function HeroStats() {
@@ -106,9 +108,34 @@ function HeroStats() {
    * raise something that has not happened yet, on the one panel whose job is
    * to be checkable.
    */
+  /*
+   * The money cell, and what it shows before there is any money.
+   *
+   * "Bought and raised" is honestly zero until somebody buys, and it stays
+   * zero however long anyone looks at it, which is a dead number in the one
+   * panel whose job is to show the thing works. Faking it is not an option on
+   * a page about other people's money, so the cell shows the other true figure
+   * instead: how the published motifs have moved since they were published,
+   * which is real stock prices repriced every twenty seconds.
+   *
+   * It swaps rather than being averaged in, and the label swaps with it, so
+   * neither number is ever presented as the other. The moment a first buy
+   * lands this becomes the volume for good.
+   */
+  const traded = s ? BigInt(s.volumeIn) + BigInt(s.raisedOnCurves) : 0n
+  const move = s?.averageMoveBps ?? null
+  const moneyCell =
+    s && traded === 0n && move !== null
+      ? {
+          k: 'Average move',
+          v: `${move >= 0 ? '+' : ''}${(move / 100).toFixed(2)}%`,
+          note: `across ${s.movingMotifs} motif${s.movingMotifs === 1 ? '' : 's'}, since launch`,
+        }
+      : { k: 'Bought and raised', v: bought ?? '—', note: 'through motifs and curves' }
+
   const cells: { k: string; v: string; note: string }[] = [
     { k: 'Motifs launched', v: s ? String(s.indexes) : '—', note: 'published on chain' },
-    { k: 'Bought and raised', v: bought ?? '—', note: 'through motifs and curves' },
+    moneyCell,
     { k: 'Basket tokens', v: s ? String(s.curves) : '—', note: `${s?.graduated ?? '—'} graduated` },
     { k: 'Creators', v: s ? String(s.creators) : '—', note: 'have published one' },
   ]

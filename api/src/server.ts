@@ -591,6 +591,50 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
               (r) => r.amount_out,
             ),
           ),
+
+          /*
+           * How the published motifs have moved, on average, since each was
+           * published. In basis points, and null when nothing has a reading.
+           *
+           * Here because the front page had four counters and one money total,
+           * and on a site where nothing has been bought yet the money total is
+           * honestly zero and stays zero however long you look at it. This one
+           * is never still: it is the real stock prices behind eighteen real
+           * baskets, repriced every twenty seconds by the levels worker.
+           *
+           * Averaged over the motifs that have a basis and a latest level, not
+           * over all of them. A motif published a minute ago has no reading
+           * yet, and counting it as zero would drag the average toward nothing
+           * every time somebody launches one.
+           */
+          averageMoveBps: (() => {
+            const rows = db.all(
+              `SELECT b.index_id AS id, b.basis18 AS basis, l.level18 AS level
+                 FROM motif_basis b
+                 JOIN motif_levels l ON l.index_id = b.index_id
+                WHERE l.at = (SELECT MAX(at) FROM motif_levels WHERE index_id = b.index_id)`,
+            ) as { id: number; basis: string; level: string }[]
+
+            let total = 0
+            let counted = 0
+            for (const r of rows) {
+              const basis = BigInt(r.basis || '0')
+              if (basis === 0n) continue
+              const level = BigInt(r.level || '0')
+              // Basis points in BigInt, because these are 18 decimal fixed
+              // point and a double loses the low bits the same way SUM does.
+              total += Number(((level - basis) * 10_000n) / basis)
+              counted++
+            }
+            return counted === 0 ? null : Math.round(total / counted)
+          })(),
+
+          /** How many motifs that average is over, so a client can say so. */
+          movingMotifs: one(
+            `SELECT COUNT(*) AS n FROM motif_basis b
+              WHERE b.basis18 != '0'
+                AND EXISTS (SELECT 1 FROM motif_levels l WHERE l.index_id = b.index_id)`,
+          ),
         }
         statsCache = { at: now, body }
         return body

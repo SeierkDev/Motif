@@ -439,7 +439,38 @@ export function Create() {
 
           <div style={{ marginTop: 20 }}>
             <label>Picture, optional</label>
-            <div className="row" style={{ gap: 16, alignItems: 'center', marginTop: 8 }}>
+
+            {/* The button under its own label, not in the column beside the
+                swatch. Sitting there it was indented the swatch's width plus
+                the gap, which left the label pointing at empty space and the
+                control itself a third of the way across the field. */}
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) void pic.upload(f)
+              }}
+            />
+            <div className="picbtns">
+              <button
+                className="btn ghost"
+                type="button"
+                disabled={pic.uploading}
+                onClick={() => fileInput.current?.click()}
+              >
+                {pic.uploading ? 'Uploading' : pic.preview ? 'Choose another' : 'Choose a picture'}
+              </button>
+              {pic.preview && (
+                <button className="btn ghost" type="button" onClick={pic.clear}>
+                  Remove
+                </button>
+              )}
+            </div>
+
+            <div className="row" style={{ gap: 16, alignItems: 'flex-start' }}>
               <div className="tokenpic">
                 {pic.preview ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -456,29 +487,6 @@ export function Create() {
                 )}
               </div>
               <div style={{ minWidth: 0 }}>
-                <input
-                  ref={fileInput}
-                  type="file"
-                  accept="image/png,image/jpeg,image/gif,image/webp"
-                  style={{ display: 'none' }}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0]
-                    if (f) void pic.upload(f)
-                  }}
-                />
-                <button
-                  className="btn ghost"
-                  type="button"
-                  disabled={pic.uploading}
-                  onClick={() => fileInput.current?.click()}
-                >
-                  {pic.uploading ? 'Uploading' : pic.preview ? 'Choose another' : 'Choose a picture'}
-                </button>
-                {pic.preview && (
-                  <button className="btn ghost" type="button" style={{ marginLeft: 8 }} onClick={pic.clear}>
-                    Remove
-                  </button>
-                )}
                 <div className="dim small" style={{ marginTop: 10, lineHeight: 1.6 }}>
                   PNG, JPEG, GIF or WebP, up to 512KB. Without one the tile is drawn from the weights, which
                   is what every motif here did before this existed. The weights stay either way: with a
