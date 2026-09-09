@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { sourceUrl, xUrl } from '@/lib/contracts'
+import { sourceUrl, tokenUrl, xUrl } from '@/lib/contracts'
 
 /**
  * The bottom of every page.
@@ -38,6 +38,9 @@ export function Footer() {
               Contracts and app on GitHub
             </a>
           )}
+          <a href={tokenUrl} target="_blank" rel="noopener">
+            MOTIF token on Pons
+          </a>
           <a href={xUrl} target="_blank" rel="noopener">
             Updates on X
           </a>

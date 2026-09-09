@@ -142,6 +142,22 @@ export const symbolOf = (addr: string) =>
 export const X_HANDLE = 'MotifFund'
 export const xUrl = `https://x.com/${X_HANDLE}` as const
 
+/**
+ * The MOTIF token, and where it trades.
+ *
+ * @dev Constants rather than `NEXT_PUBLIC_` variables, for the same reason the
+ *      X handle is: this does not differ between a local run and production,
+ *      and every one of those variables costs two declarations in
+ *      `web/Dockerfile` and an entry in `scripts/check-env.mjs`.
+ *
+ *      **This token is not part of the protocol.** Nothing in `src/` reads it,
+ *      no fee is routed to it and holding it grants nothing. It is a separate
+ *      thing that happens to share the name, and the footer says so rather than
+ *      letting a link next to "Contracts and app" imply otherwise.
+ */
+export const TOKEN_ADDRESS = '0x89565a7BBfddab021844e2f66a79852e46C802df' as const
+export const tokenUrl = `https://www.ponsfamily.com/launchpad/${TOKEN_ADDRESS}` as const
+
 export const sourceUrl = (() => {
   /*
    * Defaults to the repository rather than to nothing.

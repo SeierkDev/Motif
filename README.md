@@ -20,6 +20,7 @@
   <a href="#architecture">Architecture</a> ·
   <a href="#running-it">Run it</a> ·
   <a href="docs/02-api.md">API</a> ·
+  <a href="#the-token">Token</a> ·
   <a href="#what-it-does-not-do">Limits</a>
 </p>
 
@@ -225,6 +226,26 @@ not an archive node, so a long lived indexer will start seeing 429s and
 The images are written but have not been built here, since this machine has no
 Docker. The service itself is verified to start from a clean copy of `api/`
 with nothing but environment variables set.
+
+## The token
+
+MOTIF trades on Pons.
+
+**Address** `0x89565a7BBfddab021844e2f66a79852e46C802df` on Robinhood Chain
+(4663), 18 decimals, 1,000,000,000 supply.
+
+<https://www.ponsfamily.com/launchpad/0x89565a7BBfddab021844e2f66a79852e46C802df>
+
+**It is not part of the protocol, and that is worth being exact about.** Nothing
+in `src/` reads this address. No fee is routed to it, no function checks a
+balance of it, and holding it grants no claim on a motif, on a basket token or
+on anything the contracts hold, which is nothing in any case. Every contract in
+this repository behaves identically whether the token exists or not.
+
+It shares a name with the project and that is the whole of the relationship.
+Anyone auditing the custody claim above should be able to confirm that by
+grepping for the address and finding it only here and in `web/lib/contracts.ts`,
+where it exists to render one link in the footer.
 
 ## What it does not do
 

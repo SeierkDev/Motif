@@ -175,8 +175,16 @@ export function MotifPage({ id }: { id: number }) {
               <tr key={l.token}>
                 <td><i className="swatch" style={{ background: colorOf(l.token) }} /> {symbolOf(l.token)}</td>
                 <td className="n">{(l.weight_bps / 100).toFixed(0)}%</td>
+                {/* Three states, not two. The quote is two on chain reads per
+                    leg and lands about a second after the table does, and a
+                    dash in that gap reads as "you would receive nothing" on
+                    the one column a buyer is actually looking at. */}
                 <td className="n dim">
-                  {quotes?.[i] ? Number(formatUnits(quotes[i]!, 18)).toFixed(4) : '—'}
+                  {amountIn === 0n
+                    ? 'enter a spend'
+                    : quotes?.[i]
+                      ? Number(formatUnits(quotes[i]!, 18)).toFixed(4)
+                      : 'pricing'}
                 </td>
               </tr>
             ))}
