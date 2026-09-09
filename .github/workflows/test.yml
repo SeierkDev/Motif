@@ -1,0 +1,328 @@
+name: test
+
+on: [push, pull_request]
+
+# One run per branch. Pushing again cancels the run still going for the older
+# commit, which is the answer to a queue of five deployments all building the
+# same thing. The signal that matters is the head of the branch.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    env:
+      RPC: https://rpc.mainnet.chain.robinhood.com
+      FOUNDRY_ETH_RPC_URL: https://rpc.mainnet.chain.robinhood.com
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - uses: foundry-rs/foundry-toolchain@v1
+      # OpenZeppelin is vendored by clone rather than as a submodule, because
+      # forge install refused to touch .gitmodules with local changes present.
+      - run: test -d lib/openzeppelin-contracts || git clone --depth 1 --branch v5.4.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+      - run: forge build
+      # The abis in the sdk and the site are generated from these artifacts. If
+      # regenerating changes anything, the checked in copies are stale, and a
+      # stale abi is a user's transaction reverting rather than a build failing.
+      - run: node scripts/gen-abi.mjs
+      - run: git diff --exit-code packages/sdk/src/abi.generated.ts web/lib/abi.json
+      # Fork tests need a real rpc. It is public and keyless, which is the
+      # whole point, so CI can run exactly what a contributor runs.
+      #
+      # Split into named groups, each with its own timeout. The rpc rate limits,
+      # and when it does forge backs off rather than failing: a run that took
+      # three minutes on the commit before sat at eighty with no output and no
+      # way to tell which file was stuck. One `forge test` gives one answer
+      # after however long it takes; these give the answer per group, and a
+      # hang is a named step timing out rather than a job nobody can read.
+      #
+      # Every group runs against one local anvil, which forks the public rpc
+      # once. `scripts/ci-fork-test.sh` starts it on the first group and reuses
+      # it for the rest, so the slots the first group fetched are already in
+      # memory for the ones after it. Test state never touches anvil: forge
+      # forks it into its own evm, so sharing one costs nothing.
+      #
+      # Throttling forge did not work: the sandwich sweep 429d on four
+      # consecutive commits, at 200 compute units a second and again at 100.
+      # Turning the dial further was not going to fix it, because the problem is
+      # the number of distinct requests rather than their rate.
+      #
+      # **The block is why there are so many.** `vm.createSelectFork(url)` with
+      # no block number takes the latest, and this chain produces blocks while
+      # the suite runs, so ten test contracts fork ten different blocks. Forge's
+      # rpc cache is keyed on the block, so it never hits: every suite refetches
+      # the same pool storage from scratch. Anvil pins one block for the whole
+      # job, serves every repeat out of memory, and only misses to the public
+      # rpc once per distinct slot.
+      #
+      # That was necessary and it is not sufficient. A cold anvil still has to
+      # fetch every one of those slots once, and this chain has a single public
+      # rpc which refuses under that load. Two things were tried and measured
+      # before settling on the runner below: the block cannot be pinned across
+      # runs to warm forge's cache, because the chain prunes state within the
+      # hour so an old block cannot be forked at all; and anvil's own
+      # `--dump-state` does not capture fork fetched accounts, so a state cache
+      # is not available either. Both were tested rather than assumed.
+      #
+      # So `scripts/ci-fork-test.sh` runs each group and, when a run fails **and
+      # anvil's log shows the upstream refused it**, forks again and retries.
+      # It retries the fetch, never a test: a failure with no 429 behind it
+      # exits immediately, on the first attempt, saying so.
+      - name: the token, the vault and the curve
+        timeout-minutes: 25
+        env: { MOTIF_RPC: 'http://127.0.0.1:8545' }
+        run: scripts/ci-fork-test.sh "the token, the vault and the curve" -vv --match-path 'test/{Curve,Floor,Trade}.t.sol'
+      - name: the router, the keepers and the orders
+        timeout-minutes: 35
+        env: { MOTIF_RPC: 'http://127.0.0.1:8545' }
+        run: scripts/ci-fork-test.sh "the router, the keepers and the orders" -vv --no-match-path 'test/{Curve,Floor,Trade,Sandwich,Scan}.t.sol'
+      # The heaviest two by rpc traffic: Sandwich runs real sandwiches across a
+      # sweep of sizes, and Scan walks the factory. Single threaded, so two
+      # heavy fork suites are not competing for the same anvil at once.
+      - name: the sandwich sweep and the factory scan
+        timeout-minutes: 45
+        env: { MOTIF_RPC: 'http://127.0.0.1:8545' }
+        run: scripts/ci-fork-test.sh "the sandwich sweep and the factory scan" -vv --match-path 'test/{Sandwich,Scan}.t.sol' -j 1
+
+      # An hour of reading a contract that is fine, saved by one file. When the
+      # upstream refuses anvil, forge reports it as a revert in whatever test
+      # happened to be reading storage, and the only place the real cause
+      # appears is anvil's log.
+      #
+      # This reads the verdict ci-fork-test.sh already reached rather than
+      # deriving its own. It used to grep the whole of anvil's log for "429",
+      # and a log full of hex and block numbers matches that almost every run,
+      # so this step announced "every test failure above is a rate limit, not a
+      # contract bug" directly underneath the script's own line saying the
+      # opposite. Two real failures sat red on main for four commits behind
+      # that reassurance, which is the exact hour this step exists to save,
+      # spent in the other direction.
+      - name: anvil log, and whether the rpc was the cause
+        if: failure()
+        run: |
+          verdict=$(cat /tmp/rpc-verdict 2>/dev/null || echo none)
+          case "$verdict" in
+            refused)
+              echo "::warning::The public rpc refused anvil with a 429, and kept refusing"
+              echo "::warning::across every retry. See the 'rpc rate limits CI' section"
+              echo "::warning::of CLAUDE.md."
+              # Deliberately no longer "every failure above is that". A refusal
+              # somewhere in an attempt marks the whole attempt refused, which
+              # is not the same claim, and stating the stronger one hid a real
+              # failure behind it for eight commits.
+              echo "::warning::A refusal during an attempt does not make every failure in it"
+              echo "::warning::one. Anything listed below failed on its own terms."
+              ;;
+            real)
+              echo "The rpc did not refuse anvil during the failing attempt."
+              echo "Read every failure above as real."
+              ;;
+            *)
+              echo "No fork step reached a verdict, so whatever failed did not need the chain."
+              ;;
+          esac
+          if [ -s /tmp/rpc-suspect ]; then
+            echo "::error::These failures are not a shape a refused fetch takes:"
+            while IFS= read -r line; do echo "::error::  $line"; done < /tmp/rpc-suspect
+          fi
+          tail -50 /tmp/anvil.log || true
+
+  api-and-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: cd packages/sdk && npm install && npm run build
+      - run: cd api && npm install && npx tsc --noEmit
+      # viem rejects a mixed case address whose checksum is wrong, and it does it
+      # at call time rather than at build time, so a bad one is a page that
+      # throws for whoever touches that token and nothing that says why. Seven
+      # of the twelve tickers in the site config were wrong, which broke the
+      # portfolio outright; it survived because the five that happened to be
+      # right were the five every test used. Solidity refuses to compile one, so
+      # this gives the TypeScript the same guarantee.
+      - run: cd api && npx tsx src/check-addresses.ts
+      # The keeper against an rpc that refuses. This chain has one public
+      # endpoint and no paid one to buy, so a keeper that treats a 429 as a
+      # failed call stops itself permanently over a busy minute and needs a
+      # human to start it again. It needs no chain: the reader is replaced with
+      # one that refuses, which is the point, since a dead url gives a
+      # connection error rather than a live endpoint saying no.
+      - run: cd api && npx tsx src/check-keeper.ts
+      # The pool price arithmetic, against exact rational arithmetic at both
+      # sort orders. The shipped version was a port of the shift Solidity needs
+      # to keep sqrtP^2 inside 256 bits into a language whose integers have no
+      # width, so the shift bought nothing and cost precision that grew as the
+      # price fell. Stock pools price around 1e20 and were unaffected, which is
+      # why every test passed; a basket token opens near 5e13.
+      - run: cd api && npx tsx src/check-prices.ts
+
+      # Every NEXT_PUBLIC_ the site reads must be an ARG and an ENV in
+      # web/Dockerfile. Next inlines them at build time, so one that exists only
+      # as a run time variable on the platform is already too late: the bundle
+      # carries the default and the site behaves as though it were never set.
+      # NEXT_PUBLIC_SWAP and NEXT_PUBLIC_SOURCE_URL were both documented, read,
+      # and absent from the image, so setting either did nothing and said
+      # nothing. Both have a deliberate "not configured" fallback, which is what
+      # made it invisible.
+      - run: node scripts/check-env.mjs
+
+      - run: cd web && npm install && npx next build
+
+  # Actually call the api, which nothing did until now.
+  #
+  # `/v1/creators/:address` shipped broken and stayed broken because no test and
+  # no page ever called it. The smoke script exists to catch exactly that, and it
+  # could only ever run against whatever happened to be indexed on a developer's
+  # machine, so it never ran here.
+  #
+  # It runs against a fixture database and a deliberately unreachable rpc. That
+  # is not a compromise, it is the stronger test: these routes read SQLite and
+  # need no chain, so if one of them quietly starts depending on a chain, this is
+  # where it shows up. It also keeps CI out of the public rpc's rate limit.
+  api-routes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: cd api && npm install
+
+      # Built through the real migrations, so it cannot drift from the schema.
+      # One fixture per api instance, not one shared between three.
+      #
+      # `node-sqlite3-wasm` takes an exclusive lock by making a `.lock`
+      # directory next to the file, so a second process opening the same
+      # database gets `SQLite3Error: database is locked` and dies on boot. This
+      # job starts three apis, and whether the third got the lock depended on
+      # how fast the first two were: it passed for months and then failed on a
+      # commit that touched none of it, which is the worst kind of red because
+      # it teaches you to ignore the job. They get a copy each now.
+      - run: |
+          cd api
+          for d in main badkey placeholder; do
+            npx tsx src/fixture.ts "/tmp/motif-fixture-$d/motif.sqlite"
+          done
+
+      - name: start the api
+        run: |
+          cd api
+          DATA_DIR=/tmp/motif-fixture-main \
+          MOTIF_RPC=http://127.0.0.1:59999 \
+          npx tsx src/main.ts > /tmp/api.log 2>&1 &
+          echo $! > /tmp/api.pid
+          for i in $(seq 1 40); do
+            curl -sf http://127.0.0.1:8787/healthz > /dev/null && exit 0
+            sleep 1
+          done
+          echo "the api never became healthy:"
+          cat /tmp/api.log
+          exit 1
+
+      - run: node scripts/api-smoke.mjs
+
+      # The routes answering is one thing. The api staying up with no chain
+      # behind it is another, and it is the reason an rpc blip at deploy time no
+      # longer restart loops the whole service.
+      #
+      # Polled rather than asserted once: the server answers /healthz before the
+      # indexer has finished failing to reach the rpc, so there is a second or
+      # two where it has not reported the problem yet. A single check there is
+      # a coin flip, and a flaky gate is worse than no gate.
+      - name: the api survives an unreachable chain and says so
+        run: |
+          for i in $(seq 1 20); do
+            status=$(curl -s http://127.0.0.1:8787/v1/status)
+            if echo "$status" | grep -q 'cannot reach the rpc'; then
+              echo "$status" | grep -q '"ok": false' || { echo "reported the rpc error but still called itself ok"; exit 1; }
+              echo "the api is up, and says the chain is not"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "the indexer never reported the unreachable rpc:"
+          echo "$status"
+          exit 1
+
+      # A malformed MOTIF_KEEPER_KEY used to kill the process before the http
+      # server bound, so the deploy failed as a healthcheck timing out after
+      # five minutes of retries, and the only clue was viem's "invalid private
+      # key, expected hex or 32 bytes, got string", which is the same sentence
+      # whether the value lost its 0x, kept the quotes it was pasted with, or
+      # was truncated. The key here is a real key with two digits removed.
+      - name: a bad keeper key does not take the api down, and is named
+        run: |
+          cd api
+          DATA_DIR=/tmp/motif-fixture-badkey \
+          PORT=8788 \
+          MOTIF_RPC=http://127.0.0.1:59999 \
+          MOTIF_KEEPER_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2f \
+          npx tsx src/main.ts > /tmp/badkey.log 2>&1 &
+          echo $! > /tmp/badkey.pid
+          for i in $(seq 1 40); do
+            curl -sf http://127.0.0.1:8788/healthz > /dev/null && break
+            sleep 1
+          done
+          status=$(curl -s http://127.0.0.1:8788/v1/status)
+          if [ -z "$status" ]; then
+            echo "the api never came up with a bad keeper key:"
+            cat /tmp/badkey.log
+            exit 1
+          fi
+          echo "$status" | grep -q '"state": "bad key"' || { echo "did not report the bad key:"; echo "$status"; exit 1; }
+          echo "$status" | grep -q '"ok": false' || { echo "reported a bad key but still called itself ok"; exit 1; }
+          echo "$status" | grep -q 'a key is exactly 64' || { echo "reported a bad key without saying what is wrong with it"; exit 1; }
+          echo "the api is up, and says the keeper key is not"
+
+      # The variables that a deploy fills in hold a placeholder until it has
+      # happened. MOTIF_FROM_BLOCK went straight to BigInt() at the top level of
+      # main.ts, so "<from deploy>" threw before the port was bound and the
+      # deploy failed as a healthcheck timeout. The three addresses are worse
+      # than that in one way: viem hands them to the rpc rather than checking
+      # them, so they are not a startup error at all, just an indexer that
+      # fails forever. Both are configuration, and both are reported as such.
+      - name: placeholder config does not take the api down, and is named
+        run: |
+          cd api
+          DATA_DIR=/tmp/motif-fixture-placeholder \
+          PORT=8790 \
+          MOTIF_RPC=http://127.0.0.1:59999 \
+          MOTIF_FROM_BLOCK='<from deploy>' \
+          MOTIF_ROUTER='<from deploy>' \
+          npx tsx src/main.ts > /tmp/placeholder.log 2>&1 &
+          echo $! > /tmp/placeholder.pid
+          for i in $(seq 1 40); do
+            curl -sf http://127.0.0.1:8790/healthz > /dev/null && break
+            sleep 1
+          done
+          status=$(curl -s http://127.0.0.1:8790/v1/status)
+          if [ -z "$status" ]; then
+            echo "the api never came up with placeholder config:"
+            cat /tmp/placeholder.log
+            exit 1
+          fi
+          echo "$status" | grep -q 'MOTIF_ROUTER is not an address' || { echo "did not name the bad address variable:"; echo "$status"; exit 1; }
+          echo "$status" | grep -q 'MOTIF_FROM_BLOCK is not a block number' || { echo "did not name the bad block variable:"; echo "$status"; exit 1; }
+          echo "$status" | grep -q '"ok": false' || { echo "reported placeholder config but still called itself ok"; exit 1; }
+          echo "the api is up, and names every variable still holding a placeholder"
+
+      - if: always()
+        run: kill "$(cat /tmp/placeholder.pid)" || true
+
+      - if: failure()
+        run: cat /tmp/placeholder.log
+
+      - if: always()
+        run: kill "$(cat /tmp/badkey.pid)" || true
+
+      - if: failure()
+        run: cat /tmp/badkey.log
+
+      - if: always()
+        run: kill "$(cat /tmp/api.pid)" || true
+
+      - if: failure()
+        run: cat /tmp/api.log

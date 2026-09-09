@@ -1,0 +1,242 @@
+---
+# Deploy the contracts from the GitHub web UI.
+#
+# This exists because the four variables the api needs (MOTIF_ROUTER,
+# MOTIF_REBALANCER, MOTIF_ORDERS, MOTIF_FROM_BLOCK) are outputs of a deploy,
+# and until one has happened they hold a placeholder. Railway never deploys
+# contracts: it builds the api and web images and runs them, nothing more. So
+# somebody has to run script/Deploy.s.sol against a real rpc, and this is that,
+# runnable from a browser with no terminal.
+#
+# It never runs on a push. Actions -> deploy contracts -> Run workflow.
+#
+# WHAT IT COSTS. Against a mainnet rpc this spends real gas and cannot be
+# undone. The contracts are immutable once deployed and there is no way to
+# move a motif to a new address afterwards, so a mistake here means deploying
+# again and abandoning the first set.
+#
+# WHO OWNS THE RESULT. Deploy.s.sol passes the deploying address as both owner
+# and guardian of all three contracts. Whatever key this uses therefore holds
+# pause. Use a key that exists for this and nothing else.
+
+name: deploy contracts
+
+on:
+  workflow_dispatch:
+    inputs:
+      rpc_url:
+        description: "RPC to deploy against"
+        required: true
+        default: "https://rpc.mainnet.chain.robinhood.com"
+      fee_to:
+        description: "Address that receives the protocol fee forever. PERMANENT, immutable. Not the deployer."
+        required: true
+        default: ""
+      guardian:
+        description: "Address that can pause. Transferable later. Blank means same as fee_to."
+        required: false
+        default: ""
+      confirm:
+        description: "Type deploy to confirm. Real gas, cannot be undone."
+        required: true
+        default: ""
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # Checked before anything else so a misclick costs nothing.
+      - name: check the confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "deploy" ]; then
+            echo "Not confirmed. Type deploy in the confirm box to run this."
+            exit 1
+          fi
+          # protocolFeeTo is immutable on the router. A typo here is not a
+          # setting to correct later, it is a redeploy, so the shape is checked
+          # before anything is built rather than after gas has been spent.
+          case "${{ inputs.fee_to }}" in
+            0x[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]) ;;
+            *) echo "fee_to is not a 20 byte address: '${{ inputs.fee_to }}'"; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      # OpenZeppelin is vendored by clone rather than as a submodule, the same
+      # way the test workflow does it. Without this the remapping is unresolvable.
+      - run: test -d lib/openzeppelin-contracts || git clone --depth 1 --branch v5.4.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+
+      - run: forge build
+
+      # Fail here rather than half way through a broadcast. An Orbit chain
+      # deploy that runs out of gas partway leaves some contracts deployed and
+      # the rest not, which is the worst state to be in.
+      - name: check the deployer is funded
+        env:
+          PRIVATE_KEY: ${{ secrets.DEPLOY_PRIVATE_KEY }}
+        run: |
+          if [ -z "$PRIVATE_KEY" ]; then
+            echo "The DEPLOY_PRIVATE_KEY secret is not set."
+            echo "Settings -> Secrets and variables -> Actions -> New repository secret."
+            exit 1
+          fi
+          addr=$(cast wallet address --private-key "$PRIVATE_KEY")
+          echo "deployer $addr"
+          bal=$(cast balance "$addr" --rpc-url "${{ inputs.rpc_url }}")
+          eth=$(cast from-wei "$bal" 2>/dev/null || echo "?")
+          echo "balance  $bal wei ($eth ETH)"
+          # Carried out of this step so the report at the end of the job can
+          # state it. A step that fails in the middle of a long job has its
+          # output buried under everything the runner prints afterwards.
+          echo "BALANCE_WEI=$bal" >> "$GITHUB_ENV"
+          echo "BALANCE_ETH=$eth" >> "$GITHUB_ENV"
+          # Set before the gate below, not after it. It was after, so a run that
+          # stopped on the balance reported the deployer as missing and blamed
+          # the key, which was the one thing that had actually worked.
+          echo "DEPLOYER=$addr" >> "$GITHUB_ENV"
+
+          # Measured, not guessed. Forge estimated 0.006163097215437472 ETH for
+          # this script on chain 4663, and that figure is already the worst
+          # case: gas multiplied by the max fee per gas rather than the base
+          # fee. The base fee on that same run was 0.384 gwei against a max of
+          # 0.769, so the realistic cost is about half the estimate.
+          #
+          # 0.0065 is a little over the worst case. The first version wanted
+          # 0.008, picked before any of this had been measured, and it refused a
+          # wallet holding 0.006978 which covers the worst case with room left.
+          #
+          # python3 rather than bash arithmetic or bc: wei overflows a signed
+          # 64 bit int above about 9.2 ETH, and bc is not guaranteed present.
+          MIN=6500000000000000
+          if python3 -c 'import sys; sys.exit(0 if int(sys.argv[1]) < int(sys.argv[2]) else 1)' "$bal" "$MIN"; then
+            echo "Not enough gas. This deploy needs about 0.00617 ETH at the"
+            echo "worst case and this check wants 0.0065. Top up and re-run."
+            exit 1
+          fi
+
+      # --slow sends one transaction at a time and waits for each receipt.
+      # Slower, and it avoids the nonce races that a batch submission hits on
+      # an L2 sequencer.
+      - name: deploy
+        env:
+          PRIVATE_KEY: ${{ secrets.DEPLOY_PRIVATE_KEY }}
+          MOTIF_FEE_TO: ${{ inputs.fee_to }}
+          MOTIF_GUARDIAN: ${{ inputs.guardian || inputs.fee_to }}
+          MOTIF_OWNER: ${{ inputs.fee_to }}
+        run: |
+          echo "fees and ownership go to ${{ inputs.fee_to }}"
+          echo "guardian ${{ inputs.guardian || inputs.fee_to }}"
+          # --private-key, which both unlocks the wallet and sets the sender.
+          #
+          # Two earlier attempts at this. Nothing on the command line gave
+          # "You seem to be using Foundry's default sender", because
+          # vm.startBroadcast(pk) inside the script signs but does not tell
+          # forge who is sending. --sender alone then gave "No associated
+          # wallet for addresses: [...]. Unlocked wallets: []", because naming
+          # the sender does not hand forge a key to sign with. It needs the
+          # wallet itself, and the same key the script broadcasts with.
+          #
+          # Teed to a file because the api that reads these logs back returns
+          # only the last few kilobytes, and the runner's own cleanup is longer
+          # than that. Without this the reason a deploy failed is unreadable.
+          # pipefail, or the exit status would be tee's and every failure would
+          # look like a success.
+          set -o pipefail
+          forge script script/Deploy.s.sol:Deploy \
+            --rpc-url "${{ inputs.rpc_url }}" \
+            --private-key "$PRIVATE_KEY" \
+            --broadcast --slow -vvv 2>&1 | tee /tmp/deploy.log
+
+      # Read the addresses out of the broadcast record rather than by scraping
+      # the log. The record also carries the block each contract landed in,
+      # which is the only place MOTIF_FROM_BLOCK can come from.
+      - name: collect the addresses and the deploy block
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import glob, json, os
+
+          runs = glob.glob('broadcast/Deploy.s.sol/*/run-latest.json')
+          if not runs:
+              print('## Deploy finished but no broadcast record was written')
+              raise SystemExit(1)
+
+          data = json.load(open(sorted(runs)[-1]))
+
+          def as_int(v):
+              if isinstance(v, int):
+                  return v
+              return int(v, 16) if str(v).startswith('0x') else int(v)
+
+          wanted = {'BasketRouter': 'MOTIF_ROUTER',
+                    'Rebalancer': 'MOTIF_REBALANCER',
+                    'Orders': 'MOTIF_ORDERS'}
+          found = {}
+          for t in data.get('transactions', []):
+              name = t.get('contractName')
+              if name in wanted and t.get('contractAddress'):
+                  found[wanted[name]] = t['contractAddress']
+
+          blocks = [as_int(r['blockNumber']) for r in data.get('receipts', [])
+                    if r.get('blockNumber') is not None]
+          # The first block anything landed in. Starting the index there means
+          # no event of ours is older than the cursor.
+          first = min(blocks) if blocks else None
+
+          missing = [v for v in wanted.values() if v not in found]
+          if first is None:
+              missing.append('the deploy block')
+
+          print('## Deployed' if not missing else '## Deploy incomplete')
+          print()
+          print(f'Chain id `{data.get("chain", "unknown")}`, deployer '
+                f'`{os.environ.get("DEPLOYER", "unknown")}`.')
+          print()
+          if missing:
+              # Loud, and the job fails below. A partially deployed set is the
+              # state most worth not mistaking for a finished one: three of the
+              # four values look perfectly valid pasted into Railway.
+              print('**Missing: ' + ', '.join(missing) + '.** Do not use these. '
+                    'Read the broadcast-record artifact to see what did land, '
+                    'and deploy again rather than filling the gap by hand.')
+              print()
+          print('Paste these four into the Railway Variables tab for the api service:')
+          print()
+          print('```')
+          for var in ('MOTIF_ROUTER', 'MOTIF_REBALANCER', 'MOTIF_ORDERS'):
+              print(f'{var}={found.get(var, "MISSING")}')
+          print(f'MOTIF_FROM_BLOCK={first if first is not None else "MISSING"}')
+          print('```')
+          print()
+          print('No quotes around the values. The api checks all four on boot '
+                'and `/v1/status` names any that are still wrong.')
+
+          raise SystemExit(1 if missing else 0)
+          PY
+
+      # The record of what was deployed and where. broadcast/ is gitignored, so
+      # without this the only copy dies with the runner.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: broadcast-record
+          path: broadcast/
+          if-no-files-found: warn
+
+      # Last, and always, so it survives at the tail of the log where it can
+      # actually be read. Whatever went wrong, these three numbers are the ones
+      # worth having: which address signed, what it held, and what that is
+      # against the roughly 0.00617 ETH this deploy costs.
+      - name: report
+        if: always()
+        run: |
+          echo "=============================="
+          echo "deployer     ${DEPLOYER:-not derived, the key was missing}"
+          echo "balance wei  ${BALANCE_WEI:-not read}"
+          echo "balance ETH  ${BALANCE_ETH:-not read}"
+          echo "needs        0.00617 ETH, gate wants 0.0065"
+          echo "=============================="
+          echo "last of the forge output:"
+          tail -25 /tmp/deploy.log 2>/dev/null || echo "  the deploy step never ran"
+          echo "=============================="

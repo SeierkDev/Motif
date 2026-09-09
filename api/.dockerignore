@@ -1,0 +1,13 @@
+# The api image installs its own dependencies and reads TypeScript directly, so
+# nothing from the host belongs in the context. `data` matters most: it is the
+# local SQLite, and copying it into an image would ship a developer's database
+# and then be shadowed by the mounted volume anyway.
+node_modules
+data
+.git
+.env
+.env.*
+!.env.example
+Dockerfile
+.dockerignore
+npm-debug.log*

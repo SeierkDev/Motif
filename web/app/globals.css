@@ -1,0 +1,1063 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root {
+  --ground: #08090b;
+  --panel: #0f1116;
+  --panel-2: #14171e;
+  --line: #1f242e;
+  --line-2: #2b3240;
+  --text: #e9ecf1;
+  --dim: #8b93a3;
+  --dimmer: #5b6273;
+  --accent: #ccff33;
+  --accent-ink: #0a0c05;
+  --warm: #ff8a3d;
+  --bad: #ff5f56;
+  --sans: 'Space Grotesk', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* The ground goes on `html`, and `body` is transparent on purpose.
+   `body::before` at z-index -1 paints behind body's own background, so with an
+   opaque background on body the wash below is drawn and then covered by it.
+   Nothing warns; the page just stays flat black. */
+html {
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+body { background: transparent; color: inherit; font: inherit; }
+
+/*
+ * Depth behind the page rather than flat black.
+ *
+ * Two very wide radial washes, lime at the top left and a cool blue on the
+ * right, both at a few percent, over the ground. Fixed rather than scrolling,
+ * so it behaves as a backdrop the page moves across instead of a decoration
+ * that slides away.
+ *
+ * Deliberately faint. The tiles are the colour on this site: bands at full
+ * saturation, keyed per ticker. A background with any real chroma in it sits
+ * behind those and makes the greens argue with each other, so this is set just
+ * high enough to stop the corners reading as dead black and no higher.
+ *
+ * `pointer-events: none` and z-index -1 because it must never take a click, and
+ * `position: fixed` on a pseudo element of body keeps it out of the layout so
+ * it cannot widen the document.
+ */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(1000px 680px at 6% -12%, rgba(204, 255, 51, .13), transparent 60%),
+    radial-gradient(820px 600px at 94% 2%, rgba(83, 138, 255, .11), transparent 58%),
+    radial-gradient(1300px 860px at 52% 112%, rgba(140, 92, 255, .09), transparent 62%);
+}
+
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; cursor: pointer; }
+
+/* One width for the whole site, header and footer included.
+   There were two, 1120 and a 1320 `.wide` for the grids, and the header had
+   neither: it was full bleed with 24px of padding, so on a 1920 screen its
+   contents sat at 24 and 1896 while the page under it sat at 321 and 1599.
+   Nearly 300px of daylight on each side, which reads as a header belonging to
+   a different page. Two page widths made that unfixable rather than merely
+   wrong: a header matching one of them mismatches the other. */
+.wrap { max-width: 1320px; margin: 0 auto; padding: 0 24px; }
+
+/* ---------------------------------------------------------------- header */
+
+/* The band and the row are two elements on purpose. The background and the
+   rule under it stay full bleed, because a header whose tint and border stop
+   short of the edges reads as a floating card rather than as the top of the
+   page; the row inside is a `.wrap`, so the mark and the wallet button line up
+   with the first and last column of whatever page is under them. */
+.bar {
+  /* Relative rather than static, and that is load bearing rather than tidiness.
+     The header does not follow the page any more, but the phone menu is
+     absolutely positioned inside it, and `position: sticky` was what gave that
+     menu its containing block. Plain `static` would hand it the initial
+     containing block instead, so the menu would hang off the top of the
+     document and sit over the page wherever the reader happened to be.
+     `.bar-in` is deliberately left static so the menu still spans the band
+     rather than the row: a menu inset to the content column at 390 would be a
+     panel floating in the middle of the screen. */
+  position: relative; z-index: 20;
+  /* Translucent again, and this time for a different reason than before.
+     It was opaque once the bar stopped being pinned, since nothing scrolls
+     under it any more. But the page now has a fixed colour wash behind it, and
+     an opaque bar punches a flat black rectangle through the top of that wash.
+     No blur: there is nothing moving underneath to blur, so it would be a
+     compositing cost per frame for nothing. */
+  background: rgba(8, 9, 11, .72);
+  border-bottom: 1px solid var(--line);
+}
+.bar-in {
+  display: flex; align-items: center; gap: 28px;
+  max-width: 1320px; margin: 0 auto; padding: 14px 24px;
+}
+.mark { display: flex; align-items: center; flex: 0 0 auto; }
+.bar nav { display: flex; gap: 22px; flex: 1 1 auto; }
+.bar nav a {
+  font-size: 14px; color: var(--dim);
+  padding: 4px 0; border-bottom: 1px solid transparent;
+}
+.bar nav a:hover { color: var(--text); }
+.bar nav a.on { color: var(--accent); border-bottom-color: var(--accent); }
+.bar-right { display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
+/* Phone only. Declared here rather than inside the media query so the desktop
+   rule is the one that has to be overridden, which is the direction that fails
+   safe: a burger that leaks onto a wide viewport is visible and obvious, a nav
+   that stays hidden on one is a site with no navigation. */
+.burger { display: none; background: none; border: 0; padding: 6px; margin: -6px 0; color: var(--text); }
+.ico { display: flex; color: var(--dim); }
+.ico:hover { color: var(--text); }
+.ico svg { width: 18px; height: 18px; display: block; }
+
+.connect {
+  font-family: var(--mono); font-size: 13px;
+  background: var(--accent); color: var(--accent-ink);
+  border: none; border-radius: 999px; padding: 9px 16px; font-weight: 700;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 6px 18px -7px rgba(204, 255, 51, .5);
+}
+.connect.ghost {
+  background: transparent; color: var(--text);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .45);
+}
+.mark-img { display: block; border-radius: 7px; }
+/* "Connect wallet" is 138px, and at 320 the row needs 334 in a 320 viewport, so
+   the right gutter collapsed from 24 to 10. Shortening the label buys 53px,
+   which is more than the squeeze, and it keeps the gutter matching `.wrap`
+   rather than narrowing the header's padding away from the page's. */
+.only-wide { display: inline; }
+.only-narrow { display: none; }
+@media (max-width: 400px) {
+  .only-wide { display: none; }
+  .only-narrow { display: inline; }
+}
+
+/* ----------------------------------------------------------------- views */
+
+.view { animation: fade .28s ease both; padding: 40px 0 90px; }
+@keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .view { animation: none; } }
+
+h1 { font-size: 46px; line-height: 1.08; letter-spacing: -.03em; font-weight: 600; }
+h2, h1.label { font-size: 15px; font-family: var(--mono); font-weight: 500;
+     letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin-bottom: 18px; }
+/* A page whose design has no display heading still needs one heading that is
+   the page. Five of them started at h2, so a screen reader navigating by level
+   landed inside a document with no top, and a crawler on a site that moved off
+   hash routing specifically to be crawlable found no title in the markup. The
+   fix is the level, not the look: `h1.label` renders exactly as the h2 it
+   replaces, and `h1 { font-size: 46px }` above no longer applies because this
+   rule comes after it at equal-or-higher specificity. */
+.lede { color: var(--dim); font-size: 17px; line-height: 1.6; max-width: 62ch; margin-top: 16px; }
+
+/* ----------------------------------------------------------------- panels */
+
+.card {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 20px;
+}
+.card + .card { margin-top: 12px; }
+.card.link:hover { border-color: var(--line-2); background: var(--panel-2); }
+
+.row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.dim { color: var(--dim); }
+.small { font-size: 13px; }
+.up { color: var(--accent); }
+.down { color: var(--bad); }
+.warm { color: var(--warm); }
+
+.weights { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-top: 14px; }
+.weights span { display: block; height: 100%; }
+
+.legs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.chip {
+  font-family: var(--mono); font-size: 12px; color: var(--dim);
+  border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px;
+}
+.chip b { color: var(--text); font-weight: 500; }
+
+/* --------------------------------------------------------------- controls */
+
+input, select {
+  font: inherit; font-family: var(--mono); font-size: 14px;
+  background: var(--ground); color: var(--text);
+  border: 1px solid var(--line-2); border-radius: 4px; padding: 9px 11px;
+  width: 100%;
+}
+input:focus, select:focus { outline: none; border-color: var(--accent); }
+label { display: block; font-size: 12px; font-family: var(--mono);
+        letter-spacing: .1em; text-transform: uppercase; color: var(--dimmer); margin-bottom: 6px; }
+
+/* Rounded and lifted. 999px rather than a larger radius, so the shape follows
+   the height and every button is a consistent pill whatever its padding. The
+   shadow is two layers: a tight dark one for the edge and a wide tinted one
+   underneath, because a single blur on a near black ground reads as blur rather
+   than as lift. */
+.btn {
+  background: var(--accent); color: var(--accent-ink);
+  border: none; border-radius: 999px; padding: 11px 22px;
+  font-weight: 700; font-size: 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 6px 20px -6px rgba(204, 255, 51, .45);
+  transition: transform .14s ease, box-shadow .14s ease, filter .14s ease;
+}
+.btn:hover { transform: translateY(-1px); box-shadow: 0 1px 2px rgba(0,0,0,.5), 0 10px 26px -6px rgba(204, 255, 51, .6); }
+.btn:active { transform: translateY(0); }
+.btn:disabled { opacity: .35; cursor: not-allowed; box-shadow: none; transform: none; }
+.btn.ghost {
+  background: transparent; color: var(--text); border: 1px solid var(--line-2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 6px 18px -8px rgba(0, 0, 0, .9);
+}
+.btn.ghost:hover { border-color: var(--dimmer); box-shadow: 0 1px 2px rgba(0,0,0,.5), 0 10px 24px -8px rgba(0,0,0,.9); }
+@media (prefers-reduced-motion: reduce) {
+  .btn, .btn:hover, .btn:active { transform: none; transition: none; }
+}
+
+/* ----------------------------------------------------------------- wallet */
+
+/* Anchored to the button rather than the bar, so the menu opens under the
+   thing that was clicked. `.bar` is position: relative for the phone menu, so
+   without this the wallet list would line up with the bar's left edge. */
+/* `walletpick`, not `picker`. `.picker` is already the four column ticker grid
+   in Create and LaunchToken, defined further down this file, so it won a
+   specificity tie by source order and handed the wallet dropdown a grid layout:
+   the wrapper stretched to 574px at 1920, the button sat at its left edge, and
+   the menu anchored to a right edge 437px away from the button it belongs to.
+   Grep the stylesheet before inventing a class name. */
+.walletpick { position: relative; }
+.walletmenu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 30;
+  min-width: 200px;
+  display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: 6px;
+  padding: 5px; gap: 2px;
+}
+.walletmenu button {
+  display: flex; align-items: center; gap: 10px;
+  background: none; border: 0; border-radius: 4px;
+  padding: 9px 10px; font-size: 14px; color: var(--text); text-align: left;
+}
+.walletmenu button:hover { background: var(--panel-2); }
+.walletmenu img { border-radius: 4px; display: block; }
+
+/* A button that reads as a link, for one inside a sentence in a banner. */
+.linkish {
+  background: none; border: 0; padding: 0;
+  color: inherit; font: inherit; font-weight: 700; text-decoration: underline;
+}
+.linkish:disabled { opacity: .5; cursor: default; }
+
+/* ------------------------------------------------------------------ intro */
+
+/* Two shapes of the same thing. `.introline` is what a populated site shows:
+   one sentence above the grid, because a stranger looking at tiles of tickers
+   still has nothing telling them the tokens end up in their own wallet. `.intro`
+   is what an empty site shows, where there is no grid to be the front door. */
+.introline {
+  color: var(--dim); font-size: 14px; line-height: 1.55;
+  max-width: 66ch; margin: 0;
+}
+/* Two columns on a wide screen, one on a narrow one.
+   The hero used to be a 62ch column of text with most of a 1920 screen empty
+   beside it, which reads as a page that failed to load rather than one with
+   nothing launched yet. The measure stays on the copy, not on the grid. */
+.intro { display: grid; gap: 36px; margin: 6px 0 44px; }
+
+/* The populated hero: one line of copy where the full one goes, same panel
+   beside it. Tighter than the empty one, which has a headline to carry.
+
+   After `.intro`, not before it, and that is the whole reason this rule does
+   anything. Both selectors are one class, so a tie is broken by source order,
+   and this sat above `.intro` for long enough that its margin never once
+   applied: measured on the live build, a `div.intro.intro-slim` computed a 6px
+   top margin, which is `.intro`'s, not the 4px written here. Harmless while
+   the two numbers were 4 and 6, which is why nothing ever showed it. */
+.intro-slim { margin: 4px 0 22px; align-items: center; }
+.intro-copy { max-width: 62ch; }
+.intro h1 {
+  font-size: 34px; line-height: 1.18; letter-spacing: -.02em;
+  margin: 0 0 18px; font-weight: 600;
+}
+.intro p { color: var(--dim); font-size: 15px; line-height: 1.6; margin: 0 0 14px; }
+.introcta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 22px; }
+
+/* 980 rather than the header's 735: the copy needs its 62ch and the sample
+   needs enough width to stay a card rather than a stripe, and below this they
+   stack instead of squeezing. */
+@media (min-width: 980px) {
+  .intro {
+    grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+    gap: 56px; align-items: center;
+  }
+  /* 52 on top of `.view`'s 22 is 74 from the header, which is the top padding
+     `.hero` on /how has always used. It was 28, and 28 under a full width rule
+     with a 40px headline right beneath it reads as the header having landed on
+     the copy: the band and the hero looked like one block rather than two. The
+     number is not picked, it is the rhythm this stylesheet already had on the
+     other page that opens with a headline. Both columns move together, since
+     `.intro` is the grid holding the copy and the panel.
+
+     Wide only, and the full hero only. On a phone the hero is the whole page
+     and the space above it is space the reader scrolls past: 16 more pixels
+     there is 16 fewer for the two buttons, which were measured to sit above a
+     568 tall fold at 320 and have no room to give. And the slim variant is one
+     line of copy above a grid, which needs no headroom at all. */
+  .intro:not(.intro-slim) { margin-top: 52px; }
+  .intro h1 { font-size: 40px; }
+}
+
+/* Four cells, beside the copy. Every launchpad on this chain puts its numbers
+   here and it is the right place for them: on /how, where these used to live,
+   almost nobody clicked through to see them. */
+.herostats {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  background: var(--line); gap: 1px;
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  width: 100%; max-width: 460px; justify-self: end;
+}
+.herostats > div { background: var(--panel); padding: 20px 20px 18px; }
+.herostats .k {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--dim);
+}
+.herostats .v { font-size: 30px; font-weight: 700; margin-top: 10px; line-height: 1.1; }
+.herostats .n { font-size: 12px; color: var(--dimmer); margin-top: 6px; }
+
+/* Hidden below 980, which is exactly where it stops sitting beside the copy.
+   Stacked it is four cells of vertical height between the buttons and the grid,
+   on the size where the page is already longest, and it is the part a visitor
+   on a phone is least there for. It stays on desktop, where it costs nothing
+   because it fills space the copy was never going to use. */
+@media (max-width: 979px) {
+  .herostats { display: none; }
+}
+
+/* The scroll sentinel. It has height because a zero height element sitting on
+   the document edge can fail to intersect at all. */
+.sentinel { height: 1px; margin-top: 24px; }
+@media (max-width: 420px) {
+  /* Two 30px numbers side by side do not fit, and shrinking the type to make
+     them fit is how a number stops reading as the thing worth reading. */
+  .herostats { grid-template-columns: minmax(0, 1fr); }
+  .herostats > div { padding: 15px 16px 14px; }
+  .herostats .v { font-size: 25px; }
+}
+
+@media (max-width: 735px) {
+  /* 27px rather than the 32 `h1:not(.label)` gives. It still wraps to four
+     lines at 390, which is fine for a headline: what was measured and matters
+     is that both buttons are above the fold at 390x844, and they are. */
+  .intro h1 { font-size: 27px; }
+  .intro { margin-bottom: 30px; }
+}
+
+/* The oldest phones still in use are 320x568, and at 27px the headline wrapped
+   far enough to push both buttons to 595px, below a 568 tall fold. A call to
+   action a visitor has to scroll to find on the emptiest page on the site is
+   the one place it cannot afford to be.
+
+   That is no longer true and the type size is not what broke it. Measured
+   again: the buttons end at 652 at 320x568, so they are 84px under the fold.
+   Nothing above them shrank, things above them were added. The mark went from
+   28 to 40, which made the header 69 tall, and the copy gained a second
+   paragraph. This rule still earns its place, since 23px is 60px of wrap
+   cheaper than 27, and the claim it used to make is written down here rather
+   than quietly dropped: the fold is lost at 320 and getting it back means
+   cutting copy, which is not a decision a stylesheet gets to make. */
+@media (max-width: 360px) {
+  .intro h1 { font-size: 23px; }
+  .intro p { font-size: 14px; }
+  /* Side by side these are 128px and 132px against a 342px content box, which
+     fits, and stacking them would make the second read as the primary action
+     on the tallest part of the page. Kept in a row, allowed to wrap. */
+  .introcta { gap: 10px; }
+}
+
+/* ----------------------------------------------------------------- notice */
+
+.notice {
+  border-left: 2px solid var(--warm); background: rgba(255, 138, 61, .06);
+  padding: 12px 14px; font-size: 13px; color: var(--dim); border-radius: 0 4px 4px 0;
+}
+.notice.bad { border-left-color: var(--bad); background: rgba(255, 95, 86, .06); }
+.notice b { color: var(--text); font-weight: 500; }
+
+.strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+         background: var(--line); border: 1px solid var(--line); border-radius: 8px;
+         overflow: hidden; margin-top: 36px; }
+/* min-width 0, or a long number stops the cell from ever being narrower than
+   its own contents and the whole grid pushes past the edge of the phone. */
+.strip > div { background: var(--panel); padding: 18px; min-width: 0; }
+.strip .k { font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+            text-transform: uppercase; color: var(--dimmer); }
+/* A supply is nine digits with commas and a portfolio can be worth anything, so
+   the value has to survive being longer than its cell. It shrinks on a phone
+   and, past that, scrolls inside its own cell: clipped digits are a number
+   that reads as a different number, which is worse than a scrollbar. */
+.strip .v {
+  font-family: var(--mono); font-size: 24px; margin-top: 6px;
+  white-space: nowrap; overflow-x: auto; scrollbar-width: none;
+}
+.strip .v::-webkit-scrollbar { display: none; }
+
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-family: var(--mono); font-size: 11px; font-weight: 500;
+     letter-spacing: .12em; text-transform: uppercase; color: var(--dimmer);
+     padding: 0 0 10px; border-bottom: 1px solid var(--line); }
+td { padding: 13px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+th.n { text-align: right; }
+
+/* 735 rather than a round 720, because 736 is where the inline nav actually
+   stops fitting. Measured by stepping the viewport a pixel at a time and
+   reading the right gutter: at 721 the bar-right sat 9px from the edge instead
+   of 24, so the old 720 breakpoint handed 721 to 735 a header that was already
+   squeezed. A breakpoint is a measurement, not a round number. */
+@media (max-width: 735px) {
+  /* The nav becomes a menu under the bar rather than a third row in it.
+     Wrapping made the header two rows tall on every page and put the last
+     links behind a horizontal scroll with nothing to say they were there. */
+  .bar-in { gap: 12px; }
+  .burger { display: flex; }
+  .bar nav {
+    position: absolute; top: 100%; left: 0; right: 0;
+    display: none; flex-direction: column; gap: 0;
+    padding: 6px 0 10px;
+    /* Opaque, not the bar's translucent rgba: this sits over page content
+       rather than over the ground, and --bg does not exist in this stylesheet
+       (it is --ground), which would have been a see through menu with the
+       grid readable through the links. */
+    background: var(--ground);
+    border-bottom: 1px solid var(--line);
+  }
+  .bar.open nav { display: flex; }
+  /* Full width rows with real height, because a 14px link with 4px of padding
+     is a target you miss on a phone. */
+  .bar nav a {
+    padding: 13px 24px;
+    border-bottom: none;
+    border-left: 2px solid transparent;
+    font-size: 15px;
+  }
+  .bar nav a.on { border-bottom-color: transparent; border-left-color: var(--accent); }
+  .bar-right { margin-left: auto; }
+  h1:not(.label) { font-size: 32px; }
+  .strip { grid-template-columns: repeat(2, 1fr); }
+  .strip > div { padding: 14px; }
+  .strip .v { font-size: 19px; }
+}
+
+/* ------------------------------------------------------------- launchpad */
+
+/* `.wrap.wide` was 1320 against a 1120 default. There is one width now, so the
+   modifier is gone rather than kept as a rule that does nothing: a class the
+   markup still sets and the stylesheet ignores is the next person's hour. */
+
+/* Grids that have to collapse on a phone. These were inline styles, which a
+   media query cannot reach, which is how a 160px button ended up 48px past the
+   right edge at 390. */
+.buybar { display: grid; grid-template-columns: 1fr 160px 160px; gap: 12px; align-items: end; }
+/* The trade panel has four controls rather than three: an amount, a slippage,
+   a max and a submit. Dropped into the three column grid above, the fourth
+   lands on a second row in the first column and the submit button ends up
+   under the input at full width with two empty cells beside it. Declared
+   rather than left to implicit rows. */
+.buybar.four { grid-template-columns: 1fr 132px 92px 132px; }
+.namebar { display: grid; grid-template-columns: 1fr 180px; gap: 14px; }
+
+@media (max-width: 560px) {
+  .buybar { grid-template-columns: 1fr 1fr; }
+  /* Same specificity trap: without naming the modifier the rule above keeps
+     four columns at 390 and the row runs off the side of the phone. */
+  .buybar.four { grid-template-columns: 1fr 1fr; }
+  .buybar > button { grid-column: 1 / -1; }
+  .namebar { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  /* Four sort tabs and a launch button do not fit on one line at 390. The tabs
+     get their own scroller rather than the page scrolling sideways. */
+  .explore .row { flex-wrap: wrap; gap: 12px; }
+  .explore .row > .btn { width: 100%; text-align: center; }
+  .tabs { overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: 0 0 auto; }
+}
+
+/* Anything too wide for a phone goes in one of these and scrolls itself.
+   Written as a class on the element rather than a `.card:has(> table)` rule,
+   which matched in `element.matches` and in `CSS.supports`, and then computed
+   `overflow-x: visible` anyway. Explicit markup is not worth arguing with. */
+/* Scrollable, and it says so.
+   The two `local` gradients scroll with the content and sit on top of the two
+   `scroll` shadows, so a shadow is only visible on a side that still has more
+   table behind it. No script, and nothing to show when there is nothing to
+   scroll to, which is the whole point: a permanent fade is a lie at 1440. */
+.scroll-x {
+  overflow-x: auto;
+  background:
+    linear-gradient(to right, var(--ground) 40%, rgba(8, 9, 11, 0)) left center / 28px 100% no-repeat local,
+    linear-gradient(to left, var(--ground) 40%, rgba(8, 9, 11, 0)) right center / 28px 100% no-repeat local,
+    linear-gradient(to right, rgba(233, 236, 241, .13), rgba(8, 9, 11, 0)) left center / 14px 100% no-repeat scroll,
+    linear-gradient(to left, rgba(233, 236, 241, .13), rgba(8, 9, 11, 0)) right center / 14px 100% no-repeat scroll;
+}
+
+/* A table of four or five numeric columns has no honest layout at 390: the
+   browser will fit it by letting "1.0000" and "$165.00" touch, and a header
+   row reads as TRIGGERFILLEDSTATUS. Given a floor it keeps its column gaps and
+   the container scrolls instead, which is the rule the rest of this file
+   already applies to anything too wide for a phone. */
+.wide-rows { min-width: 520px; }
+.wide-rows th, .wide-rows td { padding-right: 18px; }
+.wide-rows th:last-child, .wide-rows td:last-child { padding-right: 0; }
+
+.lb-sub { font-size: 11px; margin-top: 2px; }
+
+/* ------------------------------------------------- a basket token's header
+
+   Picture, name, contract address and price. At 390 these were all competing
+   for one line: a 34px name wrapped to three lines with its ticker trailing
+   inside the heading, and the address ended up as two lines of 11px type that
+   nobody could read, let alone copy. Below 640 the price takes its own row and
+   the ticker and the address get theirs. */
+.tokenhead { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.tokenhead-id { display: flex; gap: 16px; align-items: center; min-width: 0; }
+.tokenhead-name { font-size: 34px; line-height: 1.15; margin: 0; }
+.tokenhead-sym { font-family: var(--mono); color: var(--dim); font-size: 14px; margin-top: 4px; }
+.tokenhead-price { margin-left: auto; text-align: right; }
+.tokenhead-price .num { font-size: 26px; margin-top: 4px; }
+
+/* The address is a button because the only thing anybody does with it is copy
+   it. It was a line of dim text that a phone renders too small to select. */
+.copy {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 10px;
+  font-family: var(--mono); font-size: 12px; color: var(--dim);
+  background: transparent; border: 1px solid var(--line); border-radius: 5px;
+  padding: 5px 9px; cursor: pointer;
+}
+.copy:hover { border-color: var(--line-2); color: var(--text); }
+.copy.done { border-color: var(--accent); color: var(--accent); }
+
+@media (max-width: 640px) {
+  .tokenhead-name { font-size: 26px; }
+  .tokenhead-price { margin-left: 0; text-align: left; width: 100%; }
+  .tokenhead-price .num { font-size: 22px; }
+}
+
+/* the level chart */
+.chart { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+.chart svg { width: 100%; height: 200px; display: block; }
+.chart-base { stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
+/* What a basket token redeems for. Dashed and dim on purpose: it is a floor
+   under the price rather than a second price, and a solid line of equal weight
+   would read as two things being compared. */
+.chart-floor { stroke: var(--dim); stroke-width: 1.5; stroke-dasharray: 5 5; vector-effect: non-scaling-stroke; }
+/* The svg stretches its x axis (preserveAspectRatio none), so a `text` element
+   inside it comes out stretched too. Its y axis is 1:1, viewBox 200 against a
+   rendered 200px, so an html label placed at the same y lands exactly on the
+   line and is not stretched at all. */
+.chart-plot { position: relative; }
+.chart-floor-l {
+  position: absolute; right: 10px; pointer-events: none;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--dim);
+}
+
+.paused {
+  background: rgba(255, 138, 61, .12); border-bottom: 1px solid var(--warm);
+  color: var(--text); font-size: 13px; padding: 10px 24px; line-height: 1.5;
+}
+.paused b { color: var(--warm); }
+
+/* ================================================================ landing */
+
+.hero {
+  display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr);
+  gap: 56px; align-items: center;
+  padding-top: 74px; padding-bottom: 20px;
+}
+.hero > * { min-width: 0; }
+
+.eyebrow {
+  font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--dimmer); margin-bottom: 20px;
+}
+.hero h1 { font-size: 60px; letter-spacing: -.035em; }
+.hero .lede { max-width: 52ch; }
+
+.hero-cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 30px; }
+.hero-note {
+  margin-top: 26px; font-size: 12px; letter-spacing: .06em; color: var(--dimmer);
+}
+
+.side-label {
+  font-size: 11px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--dimmer); margin-bottom: 10px;
+}
+
+/* A motif, as a card. Used on the landing and anywhere three of them fit. */
+.mcard {
+  display: block; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 18px;
+  transition: border-color .15s ease, background .15s ease, transform .15s ease;
+}
+.mcard:hover { border-color: var(--line-2); background: var(--panel-2); transform: translateY(-2px); }
+@media (prefers-reduced-motion: reduce) { .mcard:hover { transform: none; } }
+.mcard-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.mcard-name {
+  font-size: 17px; font-weight: 600; line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mcard-foot {
+  display: flex; justify-content: space-between; gap: 12px;
+  margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
+  font-size: 12px; color: var(--dimmer);
+}
+.mcard-foot b { color: var(--text); font-weight: 500; margin-left: 4px; }
+
+/* A band is one section of the landing page. */
+.band { margin-top: 84px; }
+.band-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+}
+.band-head h2 { margin-bottom: 18px; }
+.seeall { font-size: 13px; color: var(--accent); }
+.seeall:hover { text-decoration: underline; }
+
+.cards3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.cards2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+/* `.card + .card` adds a top margin to stack cards vertically, which inside a
+   grid pushes every card after the first down out of line with it. Written
+   twice, with two different comments saying the same thing, which is what a
+   duplicated rule looks like once nobody is reading the file top to bottom. */
+.cards3 > .card + .card, .cards2 > .card + .card { margin-top: 0; }
+
+.feature p { color: var(--dim); font-size: 14px; line-height: 1.7; margin-top: 10px; }
+.feature-t { font-weight: 600; font-size: 15px; }
+
+.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.step {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 20px;
+}
+.step-n { color: var(--accent); font-size: 12px; letter-spacing: .1em; }
+.step-t { font-weight: 600; font-size: 15px; margin-top: 12px; line-height: 1.3; }
+.step-d { color: var(--dim); font-size: 13.5px; line-height: 1.65; margin-top: 9px; }
+
+.tickers { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.tick {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 14px 12px;
+}
+.tick-sym { font-size: 15px; font-weight: 500; }
+.tick-name {
+  font-size: 11.5px; color: var(--dimmer); margin-top: 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); gap: 44px; align-items: center; }
+.calc-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+  padding: 12px 0; border-bottom: 1px solid var(--line);
+}
+.calc-row:last-of-type { border-bottom: none; }
+
+.qa { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 34px; }
+.qa-item { padding: 16px 0; border-top: 1px solid var(--line); }
+.qa-q { font-weight: 600; font-size: 15px; }
+.qa-a { color: var(--dim); font-size: 14px; line-height: 1.7; margin-top: 8px; }
+
+.closer {
+  margin-top: 90px; text-align: center;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 12px; padding: 54px 24px;
+}
+.closer-t { font-size: 30px; font-weight: 600; letter-spacing: -.02em; margin-bottom: 14px; }
+
+@media (max-width: 980px) {
+  .cards2 { grid-template-columns: minmax(0, 1fr); }
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 34px; padding-top: 44px; }
+  .hero h1 { font-size: 46px; }
+  .split { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .steps, .cards3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tickers { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .qa { grid-template-columns: minmax(0, 1fr); gap: 0 0; }
+}
+
+@media (max-width: 640px) {
+  .hero h1 { font-size: 36px; }
+  .hero-cta > .btn { flex: 1 1 auto; text-align: center; }
+  .band { margin-top: 58px; }
+  .steps, .cards3, .cards2 { grid-template-columns: minmax(0, 1fr); }
+  .tickers { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .closer { padding: 38px 18px; margin-top: 62px; }
+  .closer-t { font-size: 24px; }
+}
+
+/* ============================================================ launch form */
+
+.stepbox {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 22px; margin-bottom: 14px;
+}
+.stepbox-head { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 20px; }
+.stepbox-n { color: var(--accent); font-size: 12px; letter-spacing: .1em; padding-top: 3px; }
+.stepbox-t { font-weight: 600; font-size: 16px; }
+.stepbox-d { margin-top: 4px; line-height: 1.55; }
+
+/* Tap a ticker rather than hunt through a select. Twelve of them fit. */
+.picker { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.pick {
+  display: block; text-align: left;
+  background: var(--ground); border: 1px solid var(--line);
+  border-radius: 8px; padding: 11px 12px;
+  transition: border-color .12s ease, background .12s ease;
+}
+.pick:hover { border-color: var(--line-2); }
+.pick.on { border-color: var(--accent); background: rgba(204, 255, 51, .07); }
+.pick-sym { display: block; font-size: 14px; font-weight: 500; }
+.pick.on .pick-sym { color: var(--accent); }
+.pick-name {
+  display: block; font-size: 11px; color: var(--dimmer); margin-top: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.wrow {
+  display: grid; grid-template-columns: minmax(0, 190px) minmax(0, 1fr) 52px 30px;
+  gap: 14px; align-items: center; padding: 9px 0;
+}
+.wrow-sym { display: flex; align-items: baseline; min-width: 0; font-size: 14px; }
+.wrow-sym b { font-weight: 600; }
+.wrow-sym span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wrow-pct { text-align: right; font-size: 14px; }
+.wrow-x {
+  background: none; border: none; color: var(--dimmer); font-size: 18px; line-height: 1;
+  padding: 4px; border-radius: 4px;
+}
+.wrow-x:hover { color: var(--bad); }
+.wrow-foot { margin-top: 18px; }
+
+.slider {
+  -webkit-appearance: none; appearance: none;
+  background: transparent; border: none; padding: 0; height: 20px; width: 100%;
+}
+.slider::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px; background: var(--line-2);
+}
+.slider::-moz-range-track { height: 4px; border-radius: 2px; background: var(--line-2); }
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 16px; height: 16px; border-radius: 50%; background: var(--accent);
+  margin-top: -6px; border: none; cursor: grab;
+}
+.slider::-moz-range-thumb {
+  width: 16px; height: 16px; border-radius: 50%; background: var(--accent);
+  border: none; cursor: grab;
+}
+.slider:focus { outline: none; }
+.slider:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px rgba(204, 255, 51, .18); }
+
+.preview { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.preview .side-label { margin-bottom: 10px; }
+
+.feebar { display: grid; grid-template-columns: minmax(0, 1fr) 74px; gap: 16px; align-items: center; }
+.feebar-v { font-size: 17px; text-align: right; }
+
+.quickbar { display: flex; gap: 8px; align-items: center; }
+.quickbar > input { width: 120px; margin-left: 4px; }
+
+.launchbar {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  margin-top: 22px;
+}
+.launchbar > .btn { padding: 14px 26px; font-size: 15px; }
+
+@media (max-width: 640px) {
+  .picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wrow { grid-template-columns: minmax(0, 1fr) 52px 30px; row-gap: 2px; }
+  /* The slider takes its own line rather than being squeezed to 60px. */
+  .wrow > .slider { grid-column: 1 / -1; order: 3; }
+  .quickbar { flex-wrap: wrap; }
+  .quickbar > input { width: 100%; margin-left: 0; }
+  .launchbar > .btn { width: 100%; }
+}
+
+/* ------------------------------------------------------------ explore find */
+
+.finder { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+.search {
+  font-family: var(--sans); font-size: 14px; padding: 11px 13px;
+  background: var(--panel); border-color: var(--line);
+}
+.search::placeholder { color: var(--dimmer); }
+.search:focus { background: var(--ground); }
+
+.holdbar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.holdbar-l {
+  flex: 0 0 auto; font-family: var(--mono); font-size: 11px;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--dimmer);
+}
+.holdbar-t { flex-wrap: wrap; }
+.holdbar .tab { padding: 5px 10px; font-size: 12px; font-family: var(--mono); }
+
+@media (max-width: 640px) {
+  .holdbar { flex-direction: column; align-items: stretch; gap: 8px; }
+  .holdbar-t { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .holdbar-t::-webkit-scrollbar { display: none; }
+}
+
+/* ================================================================== browse */
+
+.finder { display: flex; gap: 10px; align-items: stretch; margin-bottom: 14px; }
+.search {
+  font-family: var(--sans); font-size: 15px; padding: 13px 15px;
+  background: var(--panel); border-color: var(--line);
+}
+.search::placeholder { color: var(--dimmer); }
+.search:focus { background: var(--ground); }
+/* An anchor is inline, and vertical padding on an inline element paints
+   outside its line box instead of growing it, so `align-items: stretch` had
+   nothing to stretch and the button sat taller than the field beside it. As a
+   flex item it matches the input exactly. */
+.finder > .btn {
+  flex: 0 0 auto; white-space: nowrap; font-size: 13px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* The live feed as one line. It was a sticky rail, which cost the grid a whole
+   column for four rows of text that scroll past anyway. */
+.live {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); padding: 9px 13px; margin-bottom: 24px;
+  overflow: hidden;
+}
+.live-l {
+  flex: 0 0 auto; font-family: var(--mono); font-size: 10.5px;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--dimmer);
+}
+.live-items {
+  display: flex; gap: 22px; min-width: 0; overflow-x: auto;
+  scrollbar-width: none; white-space: nowrap;
+}
+.live-items::-webkit-scrollbar { display: none; }
+.live-item { font-size: 12.5px; color: var(--dim); flex: 0 0 auto; }
+.live-item:first-child { color: var(--text); }
+
+.browsehead {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.browsehead-l { display: flex; align-items: baseline; gap: 12px; }
+.count {
+  font-size: 11px; letter-spacing: .1em; color: var(--dimmer);
+  border: 1px solid var(--line); border-radius: 20px; padding: 3px 10px;
+}
+
+.holdbar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.holdbar-l {
+  flex: 0 0 auto; font-family: var(--mono); font-size: 10.5px;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--dimmer);
+}
+.holdbar-t { flex-wrap: wrap; }
+.holdbar .tab { padding: 5px 10px; font-size: 12px; font-family: var(--mono); }
+.tab.clear { color: var(--warm); border-color: transparent; }
+
+/* ---------------------------------------------------------------- the grid */
+
+.grid5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+
+.tile {
+  display: block; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  transition: border-color .15s ease, transform .15s ease;
+}
+.tile:hover { border-color: var(--line-2); transform: translateY(-2px); }
+@media (prefers-reduced-motion: reduce) { .tile:hover { transform: none; } }
+
+/* One tile shape, and a picture is what fills it.
+
+   The full height stack of labelled bands this used to draw is gone. It was
+   honest and it read as a chart in a grid of charts: twelve tickers is a small
+   palette, most baskets draw from the same handful, and a page of near
+   identical colour bars covered in percentages says nothing about which one to
+   open. Reported from the live site twice as looking bad, which is the only
+   test that matters for this.
+
+   The bands do not go away, they move: they are the strip along the bottom in
+   both cases, because they are the only thing on a tile that says what the
+   basket actually holds, and neither a picture nor a monogram says that. */
+.tile-art-img { position: relative; height: 168px; background: var(--ground); }
+.tile-art-img > img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tile-art-strip {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 6px; display: flex;
+}
+.tile-art-strip > span { display: block; height: 100%; }
+
+/* An amount somebody types, which has to look like a field rather than like a
+   chip in a row of chips. The four presets used to be the control and the
+   field sat at the end of the same `.quickbar`, where it read as a fifth
+   preset: reported as "it only offers none, 50, 100 and 500", by somebody
+   looking straight at the box they could have typed in. */
+.amountbox {
+  display: flex; align-items: center; gap: 8px; margin-top: 8px;
+  border: 1px solid var(--line-2); border-radius: 10px;
+  background: var(--panel-2); padding: 0 14px;
+}
+.amountbox:focus-within { border-color: var(--accent); }
+.amountbox.bad { border-color: var(--bad); }
+.amountbox-c { font-size: 17px; color: var(--dim); flex: 0 0 auto; }
+.amountbox-in {
+  flex: 1 1 auto; min-width: 0; background: none; border: 0; outline: none;
+  color: var(--text); font-family: var(--mono); font-size: 20px; padding: 14px 0;
+}
+
+/* What a launch with no picture gets. Two soft washes in the colours of its two
+   largest holdings over the page's own ground, with the ticker set large across
+   it, seeded off the launch so two baskets holding the same things still do not
+   come out looking like each other. It is deliberately not a picture of the
+   basket: the strip above already is one, and this half of the tile is doing
+   the job a logo does. */
+.tile-art-drawn {
+  display: flex; align-items: center; justify-content: center;
+  background-color: var(--ground); overflow: hidden;
+}
+.tile-mark {
+  font-size: 30px; font-weight: 700; letter-spacing: .06em;
+  color: rgba(255, 255, 255, .30); white-space: nowrap;
+  /* Kept off the strip at the bottom rather than centred in the whole box. */
+  transform: translateY(-3px);
+}
+@media (max-width: 560px) { .tile-mark { font-size: 24px; } }
+
+/* The same picture, square, for a token's own page and for the launch preview. */
+.tokenpic {
+  width: 96px; height: 96px; flex: none; border-radius: 10px; overflow: hidden;
+  border: 1px solid var(--line); background: var(--ground);
+}
+.tokenpic > img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tokenpic-bands { display: flex; flex-direction: column; height: 100%; }
+.tokenpic-bands > span { display: block; width: 100%; }
+
+.tile-body { padding: 13px 14px 12px; }
+/* A column, not a row. The return used to sit beside the name and take a fixed
+   column off a tile 148px wide inside at 390, which left long names breaking
+   mid-word with no hyphen: "Everything" rendered as "Everythi ng". The name now
+   has the full width and the return drops to the line under it, beside the
+   ticker, where the two small things share a baseline. */
+.tile-top { display: block; }
+.tile-sub {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  margin-top: 1px;
+}
+/* Two lines rather than one. At two tiles across on a phone a single line cut
+   "Leverage Everything" down to "Leverag...", which tells a reader nothing. The
+   min-height keeps one and two line tiles lined up with each other.
+
+   `overflow-wrap` and `min-width` are the other half, and without them the
+   clamp only fixed the vertical direction. Measured at 390 against a grid of
+   twelve: five names were cut horizontally, mid-word, with no ellipsis to say
+   so, because a flex item defaults to a minimum of its content width and the
+   `overflow: hidden` above then took the difference off the end. "Everything"
+   was 92px of word in a 73px box and read as "Everythin". Breaking the word is
+   the honest failure: the clamp still ends it, and webkit puts the ellipsis at
+   the clamp rather than in the middle of a line. */
+.tile-name {
+  font-weight: 600; font-size: 15px; line-height: 1.25;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; min-height: 38px;
+  min-width: 0; overflow-wrap: anywhere;
+}
+/* Below the name now, so it no longer needs to hold a column open. */
+.tile-ret { white-space: nowrap; }
+.tile-ret { font-size: 13.5px; flex: 0 0 auto; }
+.tile-nums {
+  display: flex; justify-content: space-between; gap: 10px;
+  margin-top: 12px; font-size: 11.5px; color: var(--dimmer);
+}
+.tile-nums b { color: var(--text); font-weight: 500; }
+/* The raise, on a tile. Sized like the bar on a token page so the two read as
+   the same measurement rather than two different ones. */
+.raisebar {
+  height: 4px; border-radius: 2px; background: var(--line);
+  margin: 10px 0 2px; overflow: hidden;
+}
+.raisebar-fill { height: 100%; background: var(--accent); }
+
+.tile-foot {
+  display: flex; justify-content: space-between; gap: 10px;
+  margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line);
+  font-size: 11px; color: var(--dimmer);
+}
+
+@media (max-width: 1240px) { .grid5 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 980px) { .grid5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 720px) {
+  .grid5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tile-art-img { height: 132px; }
+}
+@media (max-width: 640px) {
+  .finder { flex-direction: column; }
+  /* Stacked, so it is no longer matching the field's height by stretching.
+     Given the same padding it still reads as the same size control. */
+  .finder > .btn { text-align: center; padding: 13px 20px; }
+  .holdbar { flex-direction: column; align-items: stretch; gap: 8px; }
+  .holdbar-t { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .holdbar-t::-webkit-scrollbar { display: none; }
+  .browsehead .tabs { overflow-x: auto; scrollbar-width: none; }
+  .browsehead .tabs::-webkit-scrollbar { display: none; }
+}
+
+/* ==================================================================== foot */
+
+.foot { border-top: 1px solid var(--line); margin-top: 70px; padding: 44px 0 60px; }
+.foot-in {
+  display: grid; grid-template-columns: 1.4fr .7fr .9fr 1.4fr; gap: 40px;
+}
+.foot-col { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.foot-col p { color: var(--dimmer); font-size: 12.5px; line-height: 1.7; margin: 0; }
+.foot-col a { color: var(--dim); font-size: 13px; }
+.foot-col a:hover { color: var(--text); }
+.foot-brand { font-weight: 600; font-size: 15px; }
+.foot-h {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--dimmer); margin-bottom: 2px;
+}
+
+@media (max-width: 900px) {
+  .foot-in { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px; }
+}
+@media (max-width: 560px) {
+  .foot-in { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The about page keeps the hero but has no card beside it any more. */
+.hero.solo { grid-template-columns: minmax(0, 1fr); }
+
+/* ------------------------------------------------------------- controls II
+   These lived beside the leaderboard css and went out with it, which left
+   every sort tab and filter rendering as a default white browser button. */
+
+.tabs { display: flex; gap: 6px; }
+.tab {
+  background: transparent; border: 1px solid var(--line); border-radius: 5px;
+  padding: 7px 13px; font-size: 13px; color: var(--dim); white-space: nowrap;
+}
+.tab:hover { color: var(--text); border-color: var(--line-2); }
+.tab.on { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); font-weight: 600; }
+.tab:disabled { opacity: .4; cursor: not-allowed; }
+
+.swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 8px; }
+
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dimmer); flex: 0 0 auto; }
+.dot.on { background: var(--accent); box-shadow: 0 0 0 3px rgba(204, 255, 51, .14); }

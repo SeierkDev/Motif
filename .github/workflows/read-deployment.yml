@@ -1,0 +1,95 @@
+---
+# Read the deployed addresses back off the chain.
+#
+# Read only. It sends no transaction, needs no key, and spends nothing, so it
+# is safe to run as often as you like.
+#
+# It exists because the deploy's own output is hard to get at after the fact:
+# GitHub's log api returns only the last few kilobytes of a job and the runner's
+# cleanup is longer than that, and the broadcast record is an artifact behind a
+# storage host that is not always reachable. The chain is the authority anyway,
+# so this asks the chain.
+#
+# A CREATE address is keccak(rlp([sender, nonce])), so the three are derivable
+# from the deployer and the order they were deployed in. Derived is not the same
+# as true, though: every one is checked for actual contract code before it is
+# printed, and the run fails if any is empty.
+
+name: read deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      rpc_url:
+        description: "RPC to read"
+        required: true
+        default: "https://rpc.mainnet.chain.robinhood.com"
+      deployer:
+        description: "Address that deployed the contracts"
+        required: true
+        default: ""
+      first_nonce:
+        description: "Nonce of the first deployment. 0 for a fresh wallet."
+        required: false
+        default: "0"
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: derive, verify, and find the deploy block
+        env:
+          RPC: ${{ inputs.rpc_url }}
+          DEPLOYER: ${{ inputs.deployer }}
+          N0: ${{ inputs.first_nonce }}
+        run: |
+          set -euo pipefail
+
+          # The order Deploy.s.sol creates them in.
+          router=$(cast compute-address "$DEPLOYER" --nonce "$N0" | awk '{print $NF}')
+          rebal=$(cast compute-address "$DEPLOYER" --nonce "$((N0 + 1))" | awk '{print $NF}')
+          orders=$(cast compute-address "$DEPLOYER" --nonce "$((N0 + 2))" | awk '{print $NF}')
+
+          # Derived is a guess until the chain agrees. An address with no code
+          # means the nonce is wrong, or that contract never landed, and either
+          # way the value must not be handed on as if it were real.
+          for pair in "router:$router" "rebalancer:$rebal" "orders:$orders"; do
+            name=${pair%%:*}; addr=${pair#*:}
+            code=$(cast code "$addr" --rpc-url "$RPC")
+            if [ "$code" = "0x" ] || [ -z "$code" ]; then
+              echo "$name $addr has no contract code. Wrong nonce, or it never deployed."
+              exit 1
+            fi
+            echo "$name $addr has ${#code} chars of code"
+          done
+
+          # The earliest block where the router has code. Bisected rather than
+          # scanned: the chain is millions of blocks long and this is about 25
+          # calls. Starting the index here means no event of ours predates the
+          # cursor.
+          head=$(cast block-number --rpc-url "$RPC")
+          lo=0; hi=$head
+          while [ "$lo" -lt "$hi" ]; do
+            mid=$(( (lo + hi) / 2 ))
+            c=$(cast code "$router" --block "$mid" --rpc-url "$RPC" 2>/dev/null || echo "0x")
+            if [ "$c" = "0x" ] || [ -z "$c" ]; then lo=$((mid + 1)); else hi=$mid; fi
+          done
+
+          {
+            echo "ROUTER=$router"
+            echo "REBALANCER=$rebal"
+            echo "ORDERS=$orders"
+            echo "BLOCK=$lo"
+          } >> "$GITHUB_ENV"
+
+      # Last and small, so it survives in the tail of the log where it can
+      # actually be read back.
+      - name: values
+        if: always()
+        run: |
+          echo "MOTIF_ROUTER=${ROUTER:-unknown}"
+          echo "MOTIF_REBALANCER=${REBALANCER:-unknown}"
+          echo "MOTIF_ORDERS=${ORDERS:-unknown}"
+          echo "MOTIF_FROM_BLOCK=${BLOCK:-unknown}"

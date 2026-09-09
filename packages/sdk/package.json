@@ -1,0 +1,34 @@
+{
+  "name": "@motif/sdk",
+  "version": "0.1.0",
+  "description": "Read Motif indexes, buys and live events, and build transactions against the contracts.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.build.json",
+    "abi": "node ../../scripts/gen-abi.mjs"
+  },
+  "keywords": [
+    "robinhood-chain",
+    "stock-tokens",
+    "index",
+    "defi",
+    "rwa"
+  ],
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,5 @@
+Next's standalone output expects a public directory to exist, and the web
+Dockerfile copies it into the runtime image. Git does not track empty
+directories, so without this file the directory is absent from a fresh
+checkout and the Docker build fails at COPY with an error that says nothing
+about the real cause. Delete this once there is a real asset in here.

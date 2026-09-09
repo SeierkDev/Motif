@@ -1,0 +1,14 @@
+# Keep the build context small and, more importantly, keep host state out of
+# it. Without this, `COPY . .` in the build stage drops a locally built .next
+# and a host node_modules into the image, and the build then uses those instead
+# of the ones it just installed.
+node_modules
+.next
+out
+.git
+.env
+.env.*
+!.env.example
+Dockerfile
+.dockerignore
+npm-debug.log*

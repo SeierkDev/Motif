@@ -1,0 +1,75 @@
+# ---------------------------------------------------------------- secrets
+# Nothing matching these has ever been committed and nothing should be. The
+# patterns are deliberately wide: a keeper key, or an rpc url with a token in
+# it, is the one thing here that would actually cost somebody money.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.keystore
+throwaway.key
+secrets.json
+**/keystore/
+
+# ---------------------------------------------------------------- foundry
+out/
+cache/
+broadcast/
+# Vendored by clone rather than as a submodule, because forge install refused
+# to touch .gitmodules with local changes present. The readme carries the clone
+# step, and without it `forge build` cannot resolve @openzeppelin/contracts.
+lib/openzeppelin-contracts/
+
+# ------------------------------------------------------------------- node
+node_modules/
+web/node_modules/
+api/node_modules/
+packages/sdk/node_modules/
+packages/sdk/dist/
+*.tsbuildinfo
+npm-debug.log*
+.npm/
+
+# ------------------------------------------------------------------- next
+web/.next/
+# Running `next build` from the repo root instead of web/ leaves one of these
+# here. It fails immediately with "couldn't find any pages or app directory",
+# but not before writing its trace files, and `git add -A` then commits them.
+/.next/
+web/out/
+web/next-env.d.ts
+.vercel/
+
+# ------------------------------------------------------------ local state
+# The api's SQLite lives here. In production it is a mounted volume, and it
+# holds the level history, which is the one thing in this project that cannot
+# be rebuilt from the chain.
+api/data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# A dumped anvil fork. Large, machine specific, and stale within the hour
+# because the public rpc prunes the state underneath it.
+.anvil-state.json
+
+# -------------------------------------------------------- editors and os
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# ---------------------------------------------------------------- scratch
+broker/
+tmp/
+scratch/
+*.local
+
+/.claude/settings.local.json
+
+# Internal. See the note at the top of OPERATIONS.md.
+.claude/settings.local.json

@@ -1,0 +1,226 @@
+---
+# Deploy the basket token half from the GitHub web UI.
+#
+# BasketFactory and TokenSwap are the two contracts /tokens, /tokens/new and
+# /t/<address> need, and neither has ever been on the chain. Until they are,
+# the launch form renders and says there is nothing to launch against, which is
+# correct and is also half a product.
+#
+# This is the sibling of deploy-contracts.yml and exists for the same reason:
+# the values the two services need are outputs of a deploy, Railway never
+# deploys contracts, and somebody has to run forge against a real rpc. Running
+# it here means the key is a GitHub secret typed into GitHub's own settings
+# page rather than pasted into a terminal.
+#
+# WHAT THIS IS NOT. It does not touch the router, the rebalancer or the orders
+# contract, and it changes no address already in use. It attaches to the router
+# that is live, which it takes as an input and refuses if that address holds no
+# code or does not allow the quote asset.
+#
+# WHO OWNS THE RESULT. Nobody. BasketFactory has no owner, no guardian, no
+# pause and no privileged caller, and TokenSwap is deliberately ungoverned for
+# the same reason: a pause on the only way to sell a token is the thing this
+# design exists to be able to argue against. So whichever key signs this gains
+# nothing by having signed it.
+#
+# It never runs on a push. Actions -> deploy factory -> Run workflow.
+
+name: deploy factory
+
+on:
+  workflow_dispatch:
+    inputs:
+      rpc_url:
+        description: "RPC to deploy against"
+        required: true
+        default: "https://rpc.mainnet.chain.robinhood.com"
+      router:
+        description: "The router that is already live. Checked for code before anything is sent."
+        required: true
+        default: "0x7fAD2ADb589a07867477D40c142181151549AAcd"
+      confirm:
+        description: "Type deploy to confirm. Real gas, cannot be undone."
+        required: true
+        default: ""
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # Before anything is built, so a misclick costs nothing.
+      - name: check the confirmation and the router
+        run: |
+          if [ "${{ inputs.confirm }}" != "deploy" ]; then
+            echo "Not confirmed. Type deploy in the confirm box to run this."
+            exit 1
+          fi
+          case "${{ inputs.router }}" in
+            0x[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]) ;;
+            *) echo "router is not a 20 byte address: '${{ inputs.router }}'"; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      # OpenZeppelin is vendored by clone rather than as a submodule, the same
+      # way every other workflow here does it. Without this the remapping is
+      # unresolvable and forge build fails.
+      - run: test -d lib/openzeppelin-contracts || git clone --depth 1 --branch v5.4.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+
+      - run: forge build
+
+      - name: check the key and what it holds
+        env:
+          PRIVATE_KEY: ${{ secrets.DEPLOY_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PRIVATE_KEY" ]; then
+            echo "The DEPLOY_PRIVATE_KEY secret is not set."
+            echo "Settings -> Secrets and variables -> Actions -> New repository secret."
+            exit 1
+          fi
+          addr=$(cast wallet address --private-key "$PRIVATE_KEY")
+          bal=$(cast balance "$addr" --rpc-url "${{ inputs.rpc_url }}")
+          echo "deployer $addr"
+          echo "balance  $bal wei"
+          echo "DEPLOYER=$addr" >> "$GITHUB_ENV"
+          echo "BALANCE_WEI=$bal" >> "$GITHUB_ENV"
+
+      # Forge's own estimate, from a real dry run against the real chain,
+      # rather than a number written into this file. deploy-contracts.yml
+      # carries a measured constant because that deploy has been run and
+      # counted; this one has not, and a guessed floor either refuses a wallet
+      # that could have paid or waves through one that cannot.
+      #
+      # A failure to parse is a warning rather than a stop. The estimate is a
+      # convenience; the chain refusing the transaction is the real gate.
+      - name: estimate the cost against the balance
+        env:
+          PRIVATE_KEY: ${{ secrets.DEPLOY_PRIVATE_KEY }}
+          MOTIF_ROUTER: ${{ inputs.router }}
+        run: |
+          set -o pipefail
+          forge script script/DeployFactory.s.sol:DeployFactory \
+            --rpc-url "${{ inputs.rpc_url }}" \
+            --private-key "$PRIVATE_KEY" 2>&1 | tee /tmp/estimate.log || true
+
+          need=$(grep -Eo 'Estimated amount required: [0-9.]+' /tmp/estimate.log | tail -1 | awk '{print $NF}' || true)
+          if [ -z "$need" ]; then
+            echo "::warning::Could not read an estimate from the dry run. Going on anyway."
+            echo "NEED_ETH=unknown" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "NEED_ETH=$need" >> "$GITHUB_ENV"
+          have=$(cast from-wei "$BALANCE_WEI")
+          echo "estimated $need ETH, holding $have ETH"
+          python3 - "$need" "$have" <<'PY'
+          import sys
+          need, have = float(sys.argv[1]), float(sys.argv[2])
+          # A quarter over the estimate, because the estimate is priced at the
+          # max fee per gas rather than the base fee and the two move.
+          if have < need * 1.25:
+              print(f"Not enough gas. Estimated {need} ETH, holding {have}. "
+                    f"Top up past {need * 1.25:.6f} and run this again.")
+              raise SystemExit(1)
+          PY
+
+      # --slow sends one transaction at a time and waits for each receipt.
+      # Slower, and it avoids the nonce races a batch submission hits on an L2
+      # sequencer. Teed to a file because the log api returns only the last few
+      # kilobytes of a job and the runner's cleanup is longer than that.
+      - name: deploy
+        env:
+          PRIVATE_KEY: ${{ secrets.DEPLOY_PRIVATE_KEY }}
+          MOTIF_ROUTER: ${{ inputs.router }}
+        run: |
+          set -o pipefail
+          forge script script/DeployFactory.s.sol:DeployFactory \
+            --rpc-url "${{ inputs.rpc_url }}" \
+            --private-key "$PRIVATE_KEY" \
+            --broadcast --slow -vvv 2>&1 | tee /tmp/deploy.log
+
+      # Read the addresses out of the broadcast record rather than by scraping
+      # the log, the same way deploy-contracts.yml does. Both must land: a
+      # factory with no swap contract behind it means every basket that
+      # graduates has a price on its page and no way to trade at it.
+      - name: collect the addresses
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import glob, json, os
+
+          runs = glob.glob('broadcast/DeployFactory.s.sol/*/run-latest.json')
+          if not runs:
+              print('## Deploy finished but no broadcast record was written')
+              raise SystemExit(1)
+
+          data = json.load(open(sorted(runs)[-1]))
+          wanted = {'BasketFactory': 'FACTORY', 'TokenSwap': 'SWAP'}
+          found = {}
+          for t in data.get('transactions', []):
+              name = t.get('contractName')
+              if name in wanted and t.get('contractAddress'):
+                  found[wanted[name]] = t['contractAddress']
+
+          missing = [k for k in wanted.values() if k not in found]
+          print('## Deployed' if not missing else '## Deploy incomplete')
+          print()
+          print(f'Chain id `{data.get("chain", "unknown")}`, deployer '
+                f'`{os.environ.get("DEPLOYER", "unknown")}`.')
+          print()
+          if missing:
+              print('**Missing: ' + ', '.join(missing) + '.** Do not use these. '
+                    'A factory with no swap contract behind it gives every '
+                    'graduated basket a price and no way to trade at it. Read '
+                    'the broadcast-record artifact and deploy again.')
+              print()
+
+          f = found.get('FACTORY', 'MISSING')
+          s = found.get('SWAP', 'MISSING')
+          print('Set these, then **rebuild** the web service. Not restart: '
+                '`NEXT_PUBLIC_` values are baked in at build time, so a restart '
+                'keeps the old ones and nothing changes. The api only needs a '
+                'restart.')
+          print()
+          print('api service:')
+          print()
+          print('```')
+          print(f'MOTIF_FACTORY={f}')
+          print('```')
+          print()
+          print('web service:')
+          print()
+          print('```')
+          print(f'NEXT_PUBLIC_FACTORY={f}')
+          print(f'NEXT_PUBLIC_SWAP={s}')
+          print('```')
+          print()
+          print('No quotes around the values. Then check `/v1/status` on the '
+                'api: `chain.factory` should show the factory address.')
+
+          raise SystemExit(1 if missing else 0)
+          PY
+
+      # broadcast/ is gitignored, so without this the only record of what
+      # landed and where dies with the runner.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: broadcast-record
+          path: broadcast/
+          if-no-files-found: warn
+
+      # Last and always, so it survives at the tail of the log where it can be
+      # read. Whatever went wrong, these are the numbers worth having.
+      - name: report
+        if: always()
+        run: |
+          echo "=============================="
+          echo "deployer     ${DEPLOYER:-not derived, the key was missing}"
+          echo "balance wei  ${BALANCE_WEI:-not read}"
+          echo "estimated    ${NEED_ETH:-not read} ETH"
+          echo "router       ${{ inputs.router }}"
+          echo "=============================="
+          echo "last of the forge output:"
+          tail -25 /tmp/deploy.log 2>/dev/null || echo "  the deploy step never ran"
+          echo "=============================="

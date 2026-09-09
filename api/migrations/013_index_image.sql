@@ -1,0 +1,15 @@
+-- A creator's own picture for their motif.
+--
+-- The same shape as `curves.image`, and deliberately so: the url is what the
+-- launch put in its own log, this column only remembers what the chain said,
+-- and re-indexing from block zero reproduces it exactly. Nobody, including
+-- whoever runs this api, can change the picture on a motif they did not
+-- publish.
+--
+-- The tile drew nothing but the weight bands before this. The bands carry real
+-- information, which is why they do not go away: with a picture they move to a
+-- strip along the bottom, exactly as a basket token's tile already does. What
+-- they could not do is tell two baskets apart when both are drawn from the same
+-- twelve tickers, and a grid where everything looks alike is the thing this
+-- fixes.
+ALTER TABLE indexes ADD COLUMN image TEXT NOT NULL DEFAULT '';

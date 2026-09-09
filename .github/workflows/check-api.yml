@@ -1,0 +1,98 @@
+---
+# Ask the running api how it is.
+#
+# Read only: two GETs, nothing sent, no key, no gas.
+#
+# It exists because /v1/status is the honest answer to "is this working", and
+# reaching it from wherever a session happens to be running is not guaranteed.
+# A runner can reach it, so the runner asks and prints the answer somewhere it
+# can be read back.
+#
+# The digest is deliberately small and last. GitHub's log api returns only the
+# tail of a job, so anything long enough to be interesting is also long enough
+# to be cut off.
+
+name: check api
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Base url of the api, no trailing slash"
+        required: true
+        default: "https://motif-private-production.up.railway.app"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ask
+        env:
+          BASE: ${{ inputs.base_url }}
+        run: |
+          set -uo pipefail
+
+          code=$(curl -s -o /tmp/healthz.txt -w '%{http_code}' --max-time 20 "$BASE/healthz" || echo 000)
+          echo "HEALTHZ_CODE=$code" >> "$GITHUB_ENV"
+          # The body, squashed to one line, because a 404 from the platform edge
+          # and a 404 from the app are the same number and different problems.
+          # Railway says "Application not found" when nothing is deployed behind
+          # the domain; the app itself would never 404 on /healthz.
+          body=$(tr -d '\r\n' < /tmp/healthz.txt | cut -c1-160)
+          echo "HEALTHZ_BODY=${body:-empty}" >> "$GITHUB_ENV"
+
+          curl -s --max-time 25 "$BASE/v1/status" -o /tmp/status.json || true
+          # Kept whole for the artifact, digested below. The full document is
+          # several kilobytes of recent keeper attempts and level counts, which
+          # is more than the log tail can carry.
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json
+          try:
+              d = json.load(open('/tmp/status.json'))
+          except Exception as e:
+              print(f'STATUS_ERR={type(e).__name__}')
+              raise SystemExit(0)
+
+          ix = d.get('indexer', {})
+          kp = d.get('keeper', {})
+          lv = d.get('levels', {})
+          ch = d.get('chain', {})
+
+          def one(v):
+              # Newlines would break the KEY=value form GITHUB_ENV expects, and
+              # an rpc error is often several lines.
+              return str(v).replace('\n', ' ')[:200]
+
+          for k, v in {
+              'S_OK': d.get('ok'),
+              'S_CFGERR': one(ix.get('configError')),
+              'S_CFGWARN': one(ix.get('configWarning')),
+              'S_LASTBLOCK': ix.get('lastBlock'),
+              'S_IXERR': one(ix.get('error')),
+              'S_IXAGE': ix.get('secondsSinceRun'),
+              'S_KEEPER': kp.get('state'),
+              'S_KEYERR': one(kp.get('keyError')),
+              'S_LVERR': one(lv.get('error')),
+              'S_LVPRICED': lv.get('motifsPriced'),
+              'S_ROUTER': ch.get('router'),
+              'S_UPTIME': d.get('uptimeSeconds'),
+          }.items():
+              print(f'{k}={v}')
+          PY
+
+      - name: digest
+        if: always()
+        run: |
+          echo "=============================="
+          echo "healthz http   ${HEALTHZ_CODE:-none}"
+          echo "healthz body   ${HEALTHZ_BODY:-none}"
+          echo "status ok      ${S_OK:-no status}"
+          echo "configError    ${S_CFGERR:-?}"
+          echo "configWarning  ${S_CFGWARN:-?}"
+          echo "indexer block  ${S_LASTBLOCK:-?}  (age ${S_IXAGE:-?}s)"
+          echo "indexer error  ${S_IXERR:-?}"
+          echo "keeper         ${S_KEEPER:-?}  ${S_KEYERR:-}"
+          echo "levels priced  ${S_LVPRICED:-?}  err ${S_LVERR:-?}"
+          echo "router         ${S_ROUTER:-?}"
+          echo "uptime         ${S_UPTIME:-?}s"
+          echo "=============================="
