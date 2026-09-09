@@ -74,9 +74,29 @@ jobs:
         timeout-minutes: 25
         env: { MOTIF_RPC: 'http://127.0.0.1:8545' }
         run: scripts/ci-fork-test.sh "the token, the vault and the curve" -vv --match-path 'test/{Curve,Floor,Trade}.t.sol'
+      # This group holds the invariant suite, and it used to be the one that
+      # failed. Not because it reads more chain state than the others: because
+      # the invariant runner drew a fresh random sender for every one of its 960
+      # calls, and anvil must fetch balance, nonce and code before it can use an
+      # address it has never seen. Counted through a proxy in front of the public
+      # rpc, at a quarter of CI's run count: 746 requests over 193 distinct
+      # accounts, of which 133 were the eth_getStorageAt calls actually reading
+      # pool state. Everything else was addresses the handler discards, since it
+      # pranks its own actor before each call.
+      #
+      # `targetSender` in the suite fixes that at the source. Same measurement
+      # after: 252 requests, 35 accounts, and eth_getStorageAt unchanged at 131,
+      # which is the part that says no coverage was traded for it. Refusals over
+      # that window went 19 to 0 and the suite ran in half the time.
+      #
+      # The attempts and the rate below are what the sandwich group already
+      # carries, kept here as insurance rather than as the fix.
       - name: the router, the keepers and the orders
         timeout-minutes: 35
-        env: { MOTIF_RPC: 'http://127.0.0.1:8545' }
+        env:
+          MOTIF_RPC: 'http://127.0.0.1:8545'
+          CI_FORK_ATTEMPTS: '5'
+          CI_ANVIL_CUPS: '25'
         run: scripts/ci-fork-test.sh "the router, the keepers and the orders" -vv --no-match-path 'test/{Curve,Floor,Trade,Sandwich,Scan}.t.sol'
       # The heaviest two by rpc traffic: Sandwich runs real sandwiches across a
       # sweep of sizes, and Scan walks the factory. Single threaded, so two

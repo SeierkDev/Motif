@@ -64,6 +64,11 @@ contract Handler is Test {
         return actors[seed % actors.length];
     }
 
+    /// So the fork test can target these as senders without restating how many.
+    function actorCount() external view returns (uint256) {
+        return actors.length;
+    }
+
     function createIndex(uint256 seed, uint16 w) public {
         w = uint16(bound(w, 1, 9_999));
         BasketRouter.Leg[] memory legs = new BasketRouter.Leg[](2);
@@ -184,6 +189,23 @@ contract InvariantsForkTest is Test {
         orders = new Orders(FACTORY, USDG, address(this), 0);
         handler = new Handler(router, orders);
         targetContract(address(handler));
+
+        // Fuzz the three actors as senders rather than the whole address space.
+        //
+        // Every handler action pranks its own actor before it calls anything,
+        // so the sender the invariant runner picks is discarded before it can
+        // reach a contract. Left unset, that runner draws a fresh random
+        // address for all 960 calls, and each one costs three upstream
+        // requests: anvil has to fetch balance, nonce and code before it can
+        // use an address it has never seen, and this chain has one public rpc
+        // that 429s under exactly that.
+        //
+        // Measured through a proxy counting what anvil asked for, at 6 runs:
+        // 746 requests over 193 distinct accounts, of which only 133 were
+        // eth_getStorageAt, the ones actually reading pool state. The rest was
+        // this. Constraining senders here changes no coverage at all, because
+        // the pranks already decided who calls.
+        for (uint256 i; i < handler.actorCount(); ++i) targetSender(handler.actors(i));
     }
 
     /// The claim on the front page, checked against random behaviour rather
