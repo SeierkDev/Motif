@@ -27,36 +27,18 @@ import {
  * sentence saying you receive the real stock was in the footer, in dim grey,
  * below the fold at every width.
  *
- * So the intro yields rather than competing. Empty, it is the page. Populated,
- * it is one line above the grid and the grid is the front door again.
+ * It used to yield once there was inventory: full hero on an empty site, one
+ * line above the grid on a populated one. That is off. The pitch is the first
+ * thing a stranger needs whether or not there are eighteen motifs under it, and
+ * collapsing it the moment the site started working meant the only version
+ * anybody would see in practice was the short one.
  */
-function Intro({ full }: { full: boolean }) {
+function Intro() {
   /*
-   * The numbers sit beside the copy in both states, not only the empty one.
-   *
-   * They used to live inside the `full` branch, so the moment a single motif
-   * launched the whole panel vanished, on desktop as well as on a phone.
-   * Measured with 90 rows in the grid: `.herostats` was not in the document at
-   * all. The panel is the proof the mechanism is real and it is worth more once
-   * the numbers are not zero, which is exactly when it was disappearing.
-   *
-   * So the grid stays, the left column shrinks from the full hero to one line,
-   * and the right column is the same panel either way. On a phone the panel is
-   * hidden in CSS rather than here, because that is a layout decision and it
-   * belongs with the breakpoint that stacks the two columns.
+   * The numbers sit beside the copy, and on a phone the panel is hidden in CSS
+   * rather than here, because that is a layout decision and it belongs with the
+   * breakpoint that stacks the two columns.
    */
-  if (!full) {
-    return (
-      <div className="intro intro-slim">
-        <p className="introline">
-          A motif is a basket of tokenised stocks. You buy the whole basket in one
-          transaction and hold the real tokens yourself.{' '}
-          <Link href="/how" className="up">How it works</Link>
-        </p>
-        <HeroStats />
-      </div>
-    )
-  }
   return (
     <div className="intro">
       <div className="intro-copy">
@@ -313,7 +295,7 @@ export function Explore() {
   return (
     <section className="view" style={{ paddingTop: 22 }}>
       <div className="wrap">
-        <Intro full={bare} />
+        <Intro />
 
         {/* A search box and twelve ticker filters for an empty list make a new
             site look like a broken one. They come back the moment there is

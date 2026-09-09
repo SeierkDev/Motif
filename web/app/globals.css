@@ -258,30 +258,15 @@ label { display: block; font-size: 12px; font-family: var(--mono);
 
 /* ------------------------------------------------------------------ intro */
 
-/* Two shapes of the same thing. `.introline` is what a populated site shows:
-   one sentence above the grid, because a stranger looking at tiles of tickers
-   still has nothing telling them the tokens end up in their own wallet. `.intro`
-   is what an empty site shows, where there is no grid to be the front door. */
-.introline {
-  color: var(--dim); font-size: 14px; line-height: 1.55;
-  max-width: 66ch; margin: 0;
-}
+/* One shape. There were two, and the short one showed the moment anything
+   launched, which meant the pitch disappeared exactly when the site started
+   working and the only version a visitor would ever meet was the one line. */
 /* Two columns on a wide screen, one on a narrow one.
    The hero used to be a 62ch column of text with most of a 1920 screen empty
    beside it, which reads as a page that failed to load rather than one with
    nothing launched yet. The measure stays on the copy, not on the grid. */
 .intro { display: grid; gap: 36px; margin: 6px 0 44px; }
 
-/* The populated hero: one line of copy where the full one goes, same panel
-   beside it. Tighter than the empty one, which has a headline to carry.
-
-   After `.intro`, not before it, and that is the whole reason this rule does
-   anything. Both selectors are one class, so a tie is broken by source order,
-   and this sat above `.intro` for long enough that its margin never once
-   applied: measured on the live build, a `div.intro.intro-slim` computed a 6px
-   top margin, which is `.intro`'s, not the 4px written here. Harmless while
-   the two numbers were 4 and 6, which is why nothing ever showed it. */
-.intro-slim { margin: 4px 0 22px; align-items: center; }
 .intro-copy { max-width: 62ch; }
 .intro h1 {
   font-size: 34px; line-height: 1.18; letter-spacing: -.02em;
@@ -306,12 +291,11 @@ label { display: block; font-size: 12px; font-family: var(--mono);
      other page that opens with a headline. Both columns move together, since
      `.intro` is the grid holding the copy and the panel.
 
-     Wide only, and the full hero only. On a phone the hero is the whole page
-     and the space above it is space the reader scrolls past: 16 more pixels
-     there is 16 fewer for the two buttons, which were measured to sit above a
-     568 tall fold at 320 and have no room to give. And the slim variant is one
-     line of copy above a grid, which needs no headroom at all. */
-  .intro:not(.intro-slim) { margin-top: 52px; }
+     Wide only. On a phone the hero is the whole page and the space above it is
+     space the reader scrolls past: 16 more pixels there is 16 fewer for the two
+     buttons, which were measured to sit above a 568 tall fold at 320 and have
+     no room to give. */
+  .intro { margin-top: 52px; }
   .intro h1 { font-size: 40px; }
 }
 
