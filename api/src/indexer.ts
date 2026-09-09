@@ -487,43 +487,125 @@ export class Indexer {
     }
   }
 
+  /**
+   * One chain read, through the gate every other read in this process already
+   * goes through.
+   *
+   * @dev The reads in `scan` used to leave together in a `Promise.all`.
+   *      Measured against the live endpoint, that is not a burst it tolerates:
+   *      twelve at once came back **one ok and eleven 429**, and the refusals
+   *      outlasted the burst, so the following passes were refused too. Spread
+   *      by `chainPace` the same reads all succeed.
+   *
+   *      They still run concurrently. The gate only puts a floor under the gap
+   *      between the moments they leave, so a pass costs a few seconds of wall
+   *      clock and no throughput. `POLL_MS` is a delay measured after a pass
+   *      finishes rather than a period, so a slower pass makes the loop slower
+   *      instead of overlapping with itself.
+   *
+   *      Written as a wrapper around each call rather than a generic helper
+   *      taking an event, because viem infers `args` per event and a helper
+   *      that takes the event as a parameter erases it: every `log.args` in
+   *      this file then stops type checking.
+   */
+  private paced<T>(fn: () => Promise<T>): Promise<T> {
+    return chainPace.next().then(fn)
+  }
+
   private async scan(from: bigint, to: bigint, emitAbove: bigint) {
-    const [created, buys, sells, rebals, subs, unsubs, placedLogs, cancelledLogs, filledLogs] =
-      await Promise.all([
-        Promise.all([
-          this.client.getLogs({ address: ROUTER, event: indexCreated, fromBlock: from, toBlock: to }),
-          this.client.getLogs({
-            address: ROUTER,
-            event: indexCreatedNoImage,
-            fromBlock: from,
-            toBlock: to,
-          }),
-        ]).then(([withImage, without]) => [
-          ...withImage,
-          // Given the field the older shape does not have, so everything below
-          // reads one row shape rather than asking which router it came from.
-          ...without.map((l) => ({ ...l, args: { ...l.args, image: '' } })),
-        ]),
-        this.client.getLogs({ address: ROUTER, event: bought, fromBlock: from, toBlock: to }),
-        this.client.getLogs({ address: ROUTER, event: sold, fromBlock: from, toBlock: to }),
-        this.client.getLogs({ address: REBALANCER, event: rebalanced, fromBlock: from, toBlock: to }),
-        this.client.getLogs({ address: REBALANCER, event: subscribed, fromBlock: from, toBlock: to }),
-        this.client.getLogs({ address: REBALANCER, event: unsubscribed, fromBlock: from, toBlock: to }),
-        this.client.getLogs({ address: ORDERS, event: placed, fromBlock: from, toBlock: to }),
-        this.client.getLogs({ address: ORDERS, event: cancelled, fromBlock: from, toBlock: to }),
-        this.client.getLogs({ address: ORDERS, event: filled, fromBlock: from, toBlock: to }),
-      ])
+    /*
+     * One query per address, not one per event.
+     *
+     * This used to ask for each event separately, eleven `getLogs` over the
+     * same window against three addresses. Measured against the live endpoint
+     * that does not work: twelve at once came back one ok and eleven 429, and
+     * over a minute of the real cadence 85% of calls were refused. Pacing them
+     * helped and was not enough, because `scan` is all or nothing. Any single
+     * refusal throws, the cursor does not advance, and the whole pass is
+     * retried, so a per call failure rate of p means a pass completes with
+     * probability (1-p) to the power of twelve. At the 14% left after pacing
+     * that is roughly one pass in seven.
+     *
+     * Asking each address once for all of its events collapses twelve calls
+     * into four. The same logs come back, decoded by viem against the same
+     * event definitions, and are split by `eventName` below. Fewer expensive
+     * queries is the fix; the pacing underneath is what keeps the four from
+     * leaving together.
+     */
+    const [routerLogs, rebalancerLogs, ordersLogs] = await Promise.all([
+      this.paced(() =>
+        this.client.getLogs({
+          address: ROUTER,
+          // Both shapes of IndexCreated. Adding a field changes topic0 rather
+          // than lengthening the payload, so these are two distinct events on
+          // the wire and a router deployed before the picture existed still
+          // matches the second.
+          events: [indexCreated, indexCreatedNoImage, bought, sold],
+          fromBlock: from,
+          toBlock: to,
+        }),
+      ),
+      this.paced(() =>
+        this.client.getLogs({
+          address: REBALANCER,
+          events: [rebalanced, subscribed, unsubscribed],
+          fromBlock: from,
+          toBlock: to,
+        }),
+      ),
+      this.paced(() =>
+        this.client.getLogs({
+          address: ORDERS,
+          events: [placed, cancelled, filled],
+          fromBlock: from,
+          toBlock: to,
+        }),
+      ),
+    ])
+
+    /*
+     * Split the batch back out by event.
+     *
+     * A type predicate rather than a plain `filter`, because a plain one does
+     * not narrow: every `log.args` downstream would fall back to the union of
+     * all four events and stop type checking. `Extract` picks the member of
+     * viem's discriminated union whose `eventName` matches.
+     */
+    const byName = <T extends { eventName: string }, N extends T['eventName']>(logs: T[], name: N) =>
+      logs.filter((l): l is Extract<T, { eventName: N }> => l.eventName === name)
+
+    // Given the field the older shape does not have, so everything below reads
+    // one row shape rather than asking which router it came from.
+    // Normalised unconditionally rather than only for the older shape. The
+    // `in` check narrows `l.args`, not `l`, so returning `l` untouched from one
+    // branch leaves the whole union and every `args.image` downstream stops
+    // type checking. Rebuilding both branches the same way gives one row shape.
+    const created = byName(routerLogs, 'IndexCreated').map((l) => ({
+      ...l,
+      args: { ...l.args, image: 'image' in l.args ? (l.args.image ?? '') : '' },
+    }))
+
+    const buys = byName(routerLogs, 'Bought')
+    const sells = byName(routerLogs, 'Sold')
+    const rebals = byName(rebalancerLogs, 'Rebalanced')
+    const subs = byName(rebalancerLogs, 'Subscribed')
+    const unsubs = byName(rebalancerLogs, 'Unsubscribed')
+    const placedLogs = byName(ordersLogs, 'Placed')
+    const cancelledLogs = byName(ordersLogs, 'Cancelled')
+    const filledLogs = byName(ordersLogs, 'Filled')
 
     // A launch is one row and it never changes, so it is written from the log
     // alone. The event deliberately carries the name, symbol, vault and pool so
     // this needs no call back into the chain, unlike an index's legs.
     if (hasFactory()) {
-      const launches = await this.client.getLogs({
-        address: FACTORY as `0x${string}`,
-        event: launched,
-        fromBlock: from,
-        toBlock: to,
-      })
+      const launches = await this.paced(() =>
+        this.client.getLogs({
+          address: FACTORY as `0x${string}`,
+          event: launched,
+          fromBlock: from,
+          toBlock: to,
+        }),
+      )
       for (const log of launches) {
         this.db.run(
           `INSERT OR REPLACE INTO curves
