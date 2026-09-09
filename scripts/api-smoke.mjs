@@ -347,6 +347,43 @@ if (!withVolume) {
   console.log('  ok  volume and fees are decimal strings')
 }
 
+/*
+ * The front page average has to agree with the per motif numbers it averages.
+ *
+ * These are computed twice from different tables: `averageMoveBps` on
+ * /v1/stats reads the latest level of every motif, and
+ * `performance.changeBps.inception` on the leaderboard is worked out per motif
+ * by `perf`. Two independent paths to the same figure, which is the only
+ * reason the first one shipping wrong was catchable: it divided the level by
+ * the raw basket price instead of the level's own base of 100, and published
+ * +82.68% for a set of motifs actually spread between +0.95% and -1.95%.
+ * Nothing threw. The number simply looked like a number.
+ */
+const { body: statsForAvg } = await get('/v1/stats')
+const { body: boardForAvg } = await get('/v1/leaderboard?by=new')
+checked++
+const inceptions = (boardForAvg?.indexes ?? [])
+  .map((m) => m.performance?.changeBps?.inception)
+  .filter((v) => typeof v === 'number')
+
+if (inceptions.length === 0) {
+  console.log('  ok  no motif has a reading yet, so there is no average to check')
+} else if (statsForAvg?.averageMoveBps === null || statsForAvg?.averageMoveBps === undefined) {
+  fail(`${inceptions.length} motif(s) have a reading but /v1/stats reported no average`)
+} else {
+  const expected = Math.round(inceptions.reduce((a, b) => a + b, 0) / inceptions.length)
+  // A basis point of slack, because the two paths round at different moments.
+  if (Math.abs(expected - statsForAvg.averageMoveBps) > 1) {
+    fail(
+      `averageMoveBps is ${statsForAvg.averageMoveBps} but the motifs it averages come to ${expected}`,
+    )
+  } else {
+    console.log(
+      `  ok  averageMoveBps (${statsForAvg.averageMoveBps}) agrees with the motifs it averages`,
+    )
+  }
+}
+
 console.log(
   process.exitCode ? `\n${checked} checked, failures above` : `\n${checked} checks ok at ${base}`,
 )

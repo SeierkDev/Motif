@@ -608,22 +608,38 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
            * every time somebody launches one.
            */
           averageMoveBps: (() => {
+            /*
+             * Against ONE, not against `motif_basis`.
+             *
+             * `motif_basis.basis18` is the raw basket price the day a motif was
+             * published, in the price feed's own units. The level is already
+             * normalised against it by the levels worker, which writes
+             * `(basket * ONE) / basis` so every motif starts at exactly 100.
+             * Dividing the level by the basis a second time divides by that
+             * price twice and compares two different scales, which is not a
+             * wrong percentage so much as no percentage at all: it put +82.68%
+             * on the front page for a set of motifs actually spread between
+             * +0.95% and -1.95%.
+             *
+             * This is the same arithmetic `perf` already does for a single
+             * motif's `inception`, and it agrees with it by construction now
+             * rather than by coincidence.
+             */
+            const LEVEL_ONE = 100n * 10n ** 18n
             const rows = db.all(
-              `SELECT b.index_id AS id, b.basis18 AS basis, l.level18 AS level
-                 FROM motif_basis b
-                 JOIN motif_levels l ON l.index_id = b.index_id
-                WHERE l.at = (SELECT MAX(at) FROM motif_levels WHERE index_id = b.index_id)`,
-            ) as { id: number; basis: string; level: string }[]
+              `SELECT l.index_id AS id, l.level18 AS level
+                 FROM motif_levels l
+                WHERE l.at = (SELECT MAX(at) FROM motif_levels WHERE index_id = l.index_id)`,
+            ) as { id: number; level: string }[]
 
             let total = 0
             let counted = 0
             for (const r of rows) {
-              const basis = BigInt(r.basis || '0')
-              if (basis === 0n) continue
               const level = BigInt(r.level || '0')
+              if (level === 0n) continue
               // Basis points in BigInt, because these are 18 decimal fixed
               // point and a double loses the low bits the same way SUM does.
-              total += Number(((level - basis) * 10_000n) / basis)
+              total += Number(((level - LEVEL_ONE) * 10_000n) / LEVEL_ONE)
               counted++
             }
             return counted === 0 ? null : Math.round(total / counted)
@@ -631,9 +647,7 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
 
           /** How many motifs that average is over, so a client can say so. */
           movingMotifs: one(
-            `SELECT COUNT(*) AS n FROM motif_basis b
-              WHERE b.basis18 != '0'
-                AND EXISTS (SELECT 1 FROM motif_levels l WHERE l.index_id = b.index_id)`,
+            `SELECT COUNT(DISTINCT index_id) AS n FROM motif_levels WHERE level18 != '0'`,
           ),
         }
         statsCache = { at: now, body }
