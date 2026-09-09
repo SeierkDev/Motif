@@ -2,7 +2,7 @@ import abi from './abi.json'
 import { orElse, origin } from './env'
 
 /** Where the source link points when nothing overrides it. */
-const DEFAULT_SOURCE_URL = 'https://github.com/SeierkDev/motif-private'
+const DEFAULT_SOURCE_URL = 'https://github.com/SeierkDev/Motif'
 
 export const basketRouterAbi = abi.BasketRouter
 export const rebalancerAbi = abi.Rebalancer
@@ -111,16 +111,17 @@ export const symbolOf = (addr: string) =>
 /**
  * Where the source lives, and it is allowed to be missing.
  *
- * @dev The header and the footer both linked to `github.com/SeierkDev/motif`,
- *      hard coded. That repository does not exist: the code is in
- *      `motif-private`, which is private and would 404 for a visitor just the
- *      same. So every page on the site carried a dead link, on the one control
- *      whose entire purpose is "you can check this yourself", which is worse
- *      than not offering it.
+ * @dev Now `github.com/SeierkDev/Motif`, which is public and is the code this
+ *      site is built from. It pointed at `motif-private` for as long as that
+ *      was the only place the code existed, and before that at a repository
+ *      that had never existed at all, so every page carried a 404 on the one
+ *      control whose entire purpose is "check this yourself".
  *
- *      Unset means the link is not rendered at all rather than rendered
- *      broken, and the moment there is somewhere real to point it is one
- *      variable. The same call `NEXT_PUBLIC_FACTORY` already makes.
+ *      The two are kept byte identical by `scripts/publish.sh`, so what a
+ *      reader finds there is what is running here.
+ *
+ *      `none`, `off` or `false` in `NEXT_PUBLIC_SOURCE_URL` still hides the
+ *      link rather than rendering a broken one.
  */
 /**
  * The project's account on X, in one place.
@@ -158,8 +159,8 @@ export const sourceUrl = (() => {
    *
    *      So the default is the real repository and the variable is now an
    *      override rather than a switch. `none`, `off` or `false` hides the
-   *      link, which is the escape hatch for shipping with the repo still
-   *      private and not wanting a 404 in the header.
+   *      link, which was the escape hatch for shipping while the repo was
+   *      still private. It is public now, so the default resolves.
    */
   const raw = orElse(process.env.NEXT_PUBLIC_SOURCE_URL, DEFAULT_SOURCE_URL)
   if (/^(none|off|false)$/i.test(raw)) return null

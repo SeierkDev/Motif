@@ -132,7 +132,7 @@ API key and no funded wallet: the tests and the local stack both run against a
 fork of mainnet, which carries the real pools and the real stock tokens.
 
 ```bash
-git clone --recurse-submodules https://github.com/SeierkDev/motif
+git clone --recurse-submodules https://github.com/SeierkDev/Motif
 cd motif
 
 # OpenZeppelin is vendored by clone rather than as a submodule, because
