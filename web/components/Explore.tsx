@@ -286,6 +286,30 @@ export function Explore() {
   const ready = data !== null || error !== null
   const bare = ready && all.length === 0 && !filtered
 
+  /*
+   * Nothing commits to a layout until the api has answered.
+   *
+   * `bare` is false while loading, so the first paint used to be the slim
+   * intro with the search box, the sort tabs and the ticker filters under it,
+   * and then the api came back with nothing and all of that was replaced by
+   * the full hero. On a site with no motifs yet that is every refresh: the
+   * grid appears, then vanishes, then the headline arrives. Two layouts on one
+   * load reads as a page that broke and recovered.
+   *
+   * Waiting costs a moment of empty space instead. It is the api's own domain
+   * and it answers in about a hundred milliseconds, so what a reader sees is
+   * the header and then the page, rather than the page twice.
+   */
+  if (!ready) {
+    return (
+      <section className="view" style={{ paddingTop: 22 }}>
+        <div className="wrap">
+          <div className="intro-wait" aria-hidden />
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section className="view" style={{ paddingTop: 22 }}>
       <div className="wrap">

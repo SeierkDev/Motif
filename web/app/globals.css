@@ -1061,3 +1061,10 @@ th.n { text-align: right; }
 
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dimmer); flex: 0 0 auto; }
 .dot.on { background: var(--accent); box-shadow: 0 0 0 3px rgba(204, 255, 51, .14); }
+
+/* Holds the space the intro is about to take, so resolving the first render
+   does not jump the page. Roughly the height of the hero and its stat panel;
+   it is never seen for long and never seen at all on a warm cache. */
+.intro-wait { min-height: 420px; }
+
+@media (max-width: 900px) { .intro-wait { min-height: 300px; } }
