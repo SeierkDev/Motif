@@ -2,12 +2,13 @@
 
 import { useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useAccount, usePublicClient, useWriteContract } from 'wagmi'
+import { useAccount, usePublicClient, useSignMessage, useWriteContract } from 'wagmi'
 import { parseAbi, parseUnits } from 'viem'
 import { addresses, basketRouterAbi, tokenList, colorOf } from '@/lib/contracts'
 import { usePicture } from '@/lib/picture'
 import { routerTakesImage, useMaxNotional, useRouterImages } from '@/lib/router'
 import { useUsdgBalance } from '@/lib/balance'
+import { pictureMessage, setMotifPicture } from '@/lib/api'
 import { AmountField, binding, toUsdg } from '@/components/AmountField'
 
 type Row = { address: `0x${string}`; symbol: string; name: string; fee: number; weight: number }
@@ -51,6 +52,8 @@ export function Create() {
   const [description, setDescription] = useState('')
   const pic = usePicture()
   const canPicture = useRouterImages()
+  const { signMessageAsync } = useSignMessage()
+  const [picNote, setPicNote] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   // Empty rather than a number somebody did not choose: with the presets
   // gone there is nothing to unselect, so a prefilled amount is money spent by
@@ -143,18 +146,32 @@ export function Create() {
       // decides, and when there is one the router is asked first rather than
       // found out about after the approval has been signed.
       const withImage = pic.image.length > 0
+
+      /*
+       * Where the picture goes, which is not always the chain.
+       *
+       * A router published since pictures exist takes a seventh argument and
+       * the url ends up in its log. The one deployed here predates that, and
+       * replacing it means a new address, a new factory bound to it and
+       * abandoning every motif already published, which is a large price for a
+       * thumbnail. So when the router cannot take it, the picture is attached
+       * to the api afterwards instead, signed by the creator.
+       *
+       * That is less of a downgrade than it sounds. The picture was never on
+       * chain in either case: the log holds a url pointing back at this site's
+       * own image store, so the bytes live on that disk regardless. On chain
+       * the pointer is immutable, and a permanent pointer to a server that is
+       * gone is worth nothing.
+       */
+      let onChain = false
       if (withImage) {
         const takes = await routerTakesImage(client as never)
-        if (takes === false) {
-          throw new Error(
-            'The router deployed on this chain cannot record a picture yet. Launch without one, or wait for the redeploy.',
-          )
-        }
         if (takes === null) {
           throw new Error(
             'Could not reach the chain to check whether a picture can be recorded. Nothing was sent. Try again.',
           )
         }
+        onChain = takes
       }
       const base = [
         addresses.usdg,
@@ -164,7 +181,7 @@ export function Create() {
         symbol.trim().toUpperCase(),
         description.trim(),
       ]
-      const meta = withImage ? [...base, pic.image] : base
+      const meta = onChain ? [...base, pic.image] : base
 
       setBusy('Publishing')
       const hash =
@@ -187,7 +204,27 @@ export function Create() {
         abi: basketRouterAbi,
         functionName: 'indexCount',
       })) as bigint
-      setCreated(Number(count) - 1)
+      const id = Number(count) - 1
+
+      /*
+       * The motif exists at this point, so a failure here must not read as a
+       * failed launch. Worst case the picture is missing and everything else
+       * landed, which is why this is caught separately and only reported as a
+       * note beside the success.
+       */
+      if (withImage && !onChain) {
+        setBusy('Attaching the picture')
+        try {
+          const signature = await signMessageAsync({ message: pictureMessage(id, pic.image) })
+          await setMotifPicture(id, pic.image, signature)
+        } catch {
+          setPicNote(
+            'The motif published, but the picture was not attached. Open it and try again from its page.',
+          )
+        }
+      }
+
+      setCreated(id)
     } catch (e: unknown) {
       const m = e instanceof Error ? e.message : String(e)
       setError(m.split('\n')[0]?.slice(0, 200) ?? 'Failed')
@@ -211,6 +248,11 @@ export function Create() {
               It is on chain and anyone can buy it. Share the link and you earn{' '}
               {(feeBps / 100).toFixed(2)}% of every purchase, in the same transaction it happens.
             </p>
+            {picNote && (
+              <div className="notice" style={{ marginTop: 14, textAlign: 'left' }}>
+                {picNote}
+              </div>
+            )}
             <div className="hero-cta" style={{ justifyContent: 'center' }}>
               <Link className="btn" href={`/m/${created}`}>
                 Open its page
@@ -427,7 +469,7 @@ export function Create() {
                 <button
                   className="btn ghost"
                   type="button"
-                  disabled={pic.uploading || canPicture === false}
+                  disabled={pic.uploading}
                   onClick={() => fileInput.current?.click()}
                 >
                   {pic.uploading ? 'Uploading' : pic.preview ? 'Choose another' : 'Choose a picture'}
@@ -444,9 +486,10 @@ export function Create() {
                 </div>
                 {canPicture === false && (
                   <div className="dim small" style={{ marginTop: 10, lineHeight: 1.6 }}>
-                    The router deployed on this chain does not record a picture yet, so a launch from here
-                    publishes without one. Said before you choose a file rather than after the transaction,
-                    because the picture is written into a log that can never be edited afterwards.
+                    The router deployed on this chain cannot record a picture in its log, so this one is
+                    kept with the site instead and you will be asked to sign a message proving the motif is
+                    yours. The signing is free and sends no transaction. The picture itself is stored the
+                    same way either way: on chain the log holds a link to this site, not the image.
                   </div>
                 )}
               </div>

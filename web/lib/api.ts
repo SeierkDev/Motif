@@ -231,3 +231,39 @@ export function price(v: number): string {
   if (v >= 1) return '$' + v.toLocaleString('en-US', { maximumFractionDigits: 2 })
   return '$' + v.toFixed(Math.min(12, Math.max(2, 3 - Math.floor(Math.log10(v)))))
 }
+
+/**
+ * The message a creator signs to attach a picture to a motif.
+ *
+ * Must match `pictureMessage` in the api exactly, byte for byte, or every
+ * signature recovers to some other address and the api refuses it. Kept short
+ * and readable because a wallet shows this text to the person signing it, and
+ * a prompt nobody can read is a prompt nobody should agree to.
+ */
+export function pictureMessage(indexId: number, image: string): string {
+  return `Motif: set the picture for motif #${indexId}\n${image}`
+}
+
+/**
+ * Attach a picture to a motif already on chain.
+ *
+ * Only needed where the router has no image argument. The api checks the
+ * signature against the creator it indexed from the chain, so this cannot set
+ * a picture on somebody else's motif and the signature cannot be replayed onto
+ * a different one, because the id is inside the signed text.
+ */
+export async function setMotifPicture(
+  indexId: number,
+  image: string,
+  signature: string,
+): Promise<void> {
+  const r = await fetch(`${API}/v1/indexes/${indexId}/image`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ image, signature }),
+  })
+  if (!r.ok) {
+    const why = (await r.json().catch(() => null)) as { error?: string } | null
+    throw new Error(why?.error ?? `the api refused the picture (${r.status})`)
+  }
+}

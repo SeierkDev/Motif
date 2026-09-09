@@ -1,12 +1,28 @@
 import { createHash } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
+import { isAddress, verifyMessage } from 'viem'
 import { appliedMigrations, dbBytes, type DB } from './db.js'
 import { config, factoryAddress, hasFactory, type Event, type Indexer } from './indexer.js'
 import type { Keeper } from './keeper.js'
 import type { Levels } from './levels.js'
 
 const started = Date.now()
+
+/**
+ * What a creator signs to attach a picture to a motif they published.
+ *
+ * The router on this chain has no image argument and cannot grow one, so the
+ * association is kept here instead. That makes the signature the only thing
+ * standing between a motif and anybody else's picture, so it binds all three
+ * facts that matter: which motif, which picture, and that it is this site
+ * asking. Anything vaguer could be replayed from a signature collected
+ * somewhere else.
+ */
+export function pictureMessage(indexId: number, image: string): string {
+  return `Motif: set the picture for motif #${indexId}\n${image}`
+}
+
 
 /**
  * A rate gate, per address.
@@ -834,6 +850,76 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
     // route that is not a GET. It is kept out of the table below because that
     // table is a map of pathname to a plain object, and neither half of that
     // fits: this one has a body coming in and bytes going out.
+    /*
+     * Attach a picture to a motif, proved by the creator's own signature.
+     *
+     * Open and keyless like the rest of this api, so the signature is the whole
+     * of the authorisation: the message names the motif and the picture, and
+     * the address it recovers to has to be the creator this api indexed from
+     * the chain. Nobody can set a picture on somebody else's motif without
+     * their key, and no picture can be moved to a different motif, because the
+     * id is inside the signed text.
+     */
+    const imageSetMatch = /^\/v1\/indexes\/(\d+)\/image$/.exec(url.pathname)
+    if (imageSetMatch !== null && req.method === 'POST') {
+      const indexId = Number(imageSetMatch[1])
+      if (overUploadRate(ip)) {
+        return send(res, 429, { error: `upload limit, ${UPLOAD_LIMIT} a minute` })
+      }
+      return void readBody(req, 4096)
+        .then(async (body) => {
+          if (body === null) return send(res, 413, { error: 'body too large' })
+          let parsed: { image?: unknown; signature?: unknown }
+          try {
+            parsed = JSON.parse(new TextDecoder().decode(body)) as { image?: unknown; signature?: unknown }
+          } catch {
+            return send(res, 400, { error: 'expected JSON: { image, signature }' })
+          }
+          const image = typeof parsed.image === 'string' ? parsed.image.trim() : ''
+          const signature = typeof parsed.signature === 'string' ? parsed.signature.trim() : ''
+          if (image === '' || signature === '') {
+            return send(res, 400, { error: 'expected JSON: { image, signature }' })
+          }
+          // Bounded for the same reason the contract bounds it: this string is
+          // served to every visitor who loads the grid.
+          if (image.length > 400) return send(res, 400, { error: 'image url over 400 bytes' })
+          if (!/^https?:\/\//i.test(image)) {
+            return send(res, 400, { error: 'image has to be an http or https url' })
+          }
+
+          const row = db.get('SELECT creator FROM indexes WHERE id = ?', [indexId]) as
+            | { creator: string }
+            | undefined
+          if (!row) return send(res, 404, { error: `no motif #${indexId}` })
+          if (!isAddress(row.creator)) return send(res, 500, { error: 'indexed creator is not an address' })
+
+          let ok = false
+          try {
+            ok = await verifyMessage({
+              address: row.creator as `0x${string}`,
+              message: pictureMessage(indexId, image),
+              signature: signature as `0x${string}`,
+            })
+          } catch {
+            ok = false
+          }
+          if (!ok) {
+            return send(res, 403, {
+              error: `that signature is not from ${row.creator}, who published motif #${indexId}`,
+            })
+          }
+
+          db.run(
+            `INSERT INTO index_images (index_id, image, setter, at)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(index_id) DO UPDATE SET image = excluded.image, setter = excluded.setter, at = excluded.at`,
+            [indexId, image, row.creator.toLowerCase(), Math.floor(Date.now() / 1000)],
+          )
+          send(res, 200, { indexId, image })
+        })
+        .catch(() => send(res, 400, { error: 'could not read the body' }))
+    }
+
     if (url.pathname === '/v1/images' && req.method === 'POST') {
       if (overUploadRate(ip)) {
         return send(res, 429, { error: `upload limit, ${UPLOAD_LIMIT} a minute` })
@@ -1012,8 +1098,28 @@ let perf: ((id: number) => Perf) | null = null
 
 function withLegs(db: DB, row: Record<string, unknown>) {
   const { volume_parts, fees_parts, volume_sort, fees_sort, ...rest } = row as Record<string, unknown>
+
+  /*
+   * The log wins, and this fills in when there is nothing in it.
+   *
+   * A chain whose router records pictures puts one in `indexes.image` and this
+   * never runs. This one's router predates that argument, so the column is
+   * always empty and the picture comes from `index_images` instead. Written in
+   * that order deliberately: when the router is eventually replaced, the on
+   * chain value takes over on its own with nothing here to change.
+   */
+  const image =
+    (rest.image as string) ||
+    (
+      db.get('SELECT image FROM index_images WHERE index_id = ?', [row.id as number]) as
+        | { image: string }
+        | undefined
+    )?.image ||
+    ''
+
   return {
     ...rest,
+    image,
     volume: sumText([volume_parts as string]),
     fees: sumText([fees_parts as string]),
     performance: perf ? perf(row.id as number) : null,

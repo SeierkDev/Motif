@@ -205,6 +205,7 @@ jobs:
       # nothing. Both have a deliberate "not configured" fallback, which is what
       # made it invisible.
       - run: node scripts/check-env.mjs
+      - run: node scripts/check-picture-message.mjs
 
       - run: cd web && npm install && npx next build
 
