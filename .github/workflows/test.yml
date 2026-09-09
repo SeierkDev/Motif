@@ -81,9 +81,25 @@ jobs:
       # The heaviest two by rpc traffic: Sandwich runs real sandwiches across a
       # sweep of sizes, and Scan walks the factory. Single threaded, so two
       # heavy fork suites are not competing for the same anvil at once.
+      #
+      # More patience than the other two groups, and less appetite. Three
+      # attempts with 30s and 60s between them was not enough: measured against
+      # the endpoint directly, a burst it refuses keeps being refused for
+      # minutes afterwards rather than for seconds, so a short backoff simply
+      # spends its retries inside the same penalty. Five attempts step out to
+      # 30, 60, 90 and 120, and the compute units come down from 40 to 25 so
+      # anvil asks for less on the way back in.
+      #
+      # Deliberately more retries rather than letting a refusal pass. A refusal
+      # during an attempt does not make every failure in it a refusal, and this
+      # workflow already carries the scar of hiding two real failures behind
+      # that reasoning for four commits.
       - name: the sandwich sweep and the factory scan
         timeout-minutes: 45
-        env: { MOTIF_RPC: 'http://127.0.0.1:8545' }
+        env:
+          MOTIF_RPC: 'http://127.0.0.1:8545'
+          CI_FORK_ATTEMPTS: '5'
+          CI_ANVIL_CUPS: '25'
         run: scripts/ci-fork-test.sh "the sandwich sweep and the factory scan" -vv --match-path 'test/{Sandwich,Scan}.t.sol' -j 1
 
       # An hour of reading a contract that is fine, saved by one file. When the
