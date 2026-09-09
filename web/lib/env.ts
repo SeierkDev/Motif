@@ -65,14 +65,26 @@ export function numOrElse(v: string | undefined, fallback: number): number {
  *      every caller appends a path that starts with one.
  */
 export function origin(v: string | undefined, fallback: string): string {
-  const raw = orElse(v, '').replace(/\/+$/, '')
+  // Quotes come off before anything else, because they are the one wrong value
+  // that gets past the check below rather than landing on the fallback.
+  // `NEXT_PUBLIC_API="host"` pasted into a dashboard field keeps its quotes:
+  // the shell that would have stripped them is not involved. `new URL()` does
+  // not throw on `https://"host"`, so the parse succeeds, the hostname is not
+  // empty, and a broken origin is returned as if it were good. Every fetch then
+  // fails and the page renders as though the api were simply empty, which is
+  // the exact symptom this whole helper exists to prevent.
+  const unquoted = orElse(v, '').replace(/^["']+|["']+$/g, '')
+  const raw = orElse(unquoted, '').replace(/\/+$/, '')
   if (raw === '') return fallback
   const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`
   try {
     // Parsed rather than trusted, so a value wrong in some other way lands on
     // the fallback instead of being handed to fetch or to `new URL()`.
     const u = new URL(withScheme)
-    if (u.hostname === '') return fallback
+    // A hostname with nothing but dots and dashes is not a host, and neither is
+    // one carrying a character a host cannot contain. Checked explicitly
+    // because `new URL()` is far more permissive than fetch is.
+    if (u.hostname === '' || !/^[a-z0-9.-]+$/i.test(u.hostname)) return fallback
     return withScheme
   } catch {
     console.warn(`[env] not a url, falling back: ${JSON.stringify(withScheme)}`)
