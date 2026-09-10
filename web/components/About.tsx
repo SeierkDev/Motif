@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { tokenList, symbolOf } from '@/lib/contracts'
+import { BurnBand } from './BurnBand'
 
 /* The stats strip moved to the home page, where a visitor actually sees it.
    It was here, below the fold, on the page fewest people open. */
@@ -284,6 +285,9 @@ export function About() {
           </div>
         </div>
       </div>
+
+      {/* ------------------------------------------------------------ burn */}
+      <BurnBand />
 
       {/* ------------------------------------------------------------- faq */}
       <div className="wrap band">

@@ -1078,3 +1078,22 @@ th.n { text-align: right; }
 .ca-k { color: var(--accent); letter-spacing: .12em }
 .ca-v { letter-spacing: .02em }
 @media (max-width: 735px) { .ca { display: none } }
+
+/* The burn band on /how. The meter fills toward the burner's ten dollar
+   minimum, which is the only threshold a visitor needs to see. */
+.burn-meter { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 10px; }
+.burn-meter > span { display: block; height: 100%; background: var(--accent); transition: width .6s ease; }
+.burn-links { display: flex; flex-wrap: wrap; gap: 10px 20px; margin-top: 20px; font-size: 13.5px; }
+.burn-links a { color: var(--accent); }
+.burn-list { margin-top: 30px; }
+.burn-empty { padding: 12px 0; line-height: 1.6; }
+.burn-row { display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
+            padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 14px; color: inherit; }
+.burn-row:hover { background: var(--panel-2); }
+@media (max-width: 560px) { .burn-row { flex-direction: column; gap: 4px; } }
+/* On a phone the burn figures are longer than the space beside their label,
+   and a number broken across two lines reads as two numbers. Stacked instead. */
+@media (max-width: 560px) {
+  .burn-card .calc-row { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .burn-card .calc-row .num { white-space: nowrap; }
+}

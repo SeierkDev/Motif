@@ -150,13 +150,32 @@ export const xUrl = `https://x.com/${X_HANDLE}` as const
  *      and every one of those variables costs two declarations in
  *      `web/Dockerfile` and an entry in `scripts/check-env.mjs`.
  *
- *      **This token is not part of the protocol.** Nothing in `src/` reads it,
- *      no fee is routed to it and holding it grants nothing. It is a separate
- *      thing that happens to share the name, and the footer says so rather than
- *      letting a link next to "Contracts and app" imply otherwise.
+ *      **This token is not part of the protocol.** The router, the curves and
+ *      the vaults never read it, and holding it grants nothing. The one link
+ *      is downstream of the protocol fee: `MotifBurner` spends that fee buying
+ *      MOTIF and burning it, and touches nothing else.
  */
 export const TOKEN_ADDRESS = '0x89565a7BBfddab021844e2f66a79852e46C802df' as const
 export const tokenUrl = `https://www.ponsfamily.com/launchpad/${TOKEN_ADDRESS}` as const
+
+/**
+ * The burner, and the wallet it pulls the protocol fee from.
+ *
+ * @dev Constants for the same reason the token is. The fee wallet is fixed in
+ *      the router forever, and the burner is what `deploy burner` put on chain
+ *      and was read back against the router before it was approved.
+ */
+export const BURNER_ADDRESS = '0xbcE61D891bD6a7E3D99604eaBfd87804FE78A552' as const
+export const FEE_WALLET = '0x9BC511c81C9780910A9385F1347031e4B830F113' as const
+
+/** Only the running totals the site reads. Written out rather than generated,
+ *  because four views are the whole of what the page needs from it. */
+export const burnerAbi = [
+  { type: 'function', name: 'motifBurned', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'usdgSpent', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'burns', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'available', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+] as const
 
 export const sourceUrl = (() => {
   /*
