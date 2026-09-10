@@ -179,6 +179,53 @@ add-only: a feed can be set once for a token and never repointed, so a live
 subscription cannot have its prices swapped underneath it. A wrong feed
 registered the first time is still a wrong feed.
 
+## The burner
+
+`MotifBurner` spends the protocol's 0.10% on MOTIF and burns it. It sits
+outside the custody claim entirely: it never touches a buyer's funds, a
+creator's fee, a motif or a vault, only USDG that the fee wallet has chosen to
+let it pull.
+
+**What it can move.** USDG from exactly one address, the router's
+`protocolFeeTo` as read off the router at deploy time, up to that wallet's
+allowance, at most $50 a call, and only inside a call that also buys MOTIF and
+burns it. No owner, no settings, no withdrawal, and any ETH that did not come
+from unwrapping WETH is refused.
+
+**Who can call it.** Anyone, with any floor, zero included. That is only safe if
+a sandwich around it loses money, so it is measured rather than argued.
+`test_a_sandwich_around_the_largest_burn_loses_money` buys on the real curve,
+lets a $50 burn with no floor land, and sells back, at five sizes from 0.003 to
+0.1 ETH. **Every one lost.** The best outcome anywhere in the sweep was
+-0.000026 ETH, and the loss grew with size. The reason is the fee: Pons charges
+1% on each of the attacker's two trades while the prize is bounded by the burn,
+so a sandwich only pays once the burn is larger than the fee times the curve's
+quote reserve. That was about $93 at 3.76 ETH of reserve. The cap is $50, and
+the reserve only grows until graduation.
+
+**The fee wallet is trusted, and visibly so.** It is an ordinary wallet. It can
+revoke the approval, or move the fees before they are pulled. Paying the
+burner directly would need a new router, since `protocolFeeTo` is immutable.
+What makes this acceptable is that the allowance and the balance are both
+public, so anybody can see whether the fees are being left for the burner.
+
+**Anything else in that wallet is burnable.** The approval is on USDG, not on
+"fees". USDG that lands in the fee wallet for any other reason can be pulled
+and burned by anybody, at up to $50 a call. Keep nothing else there.
+
+**Pons is trusted for the purchase.** The curve is Pons's contract. The burner
+sends it the ETH and takes MOTIF back in the same call, with the floor checked
+by the curve itself. A curve that kept the ETH would cost at most one call's
+$50, and the curve address is fixed at deployment.
+
+**Graduation retires it.** Once MOTIF leaves its curve, `buy` stops working and
+every burn reverts. `test_at_the_graduation_line_a_burn_is_all_or_nothing`
+drives the real curve with 53 buys until it stops selling and shows the burn
+reverting with the fees exactly where they were. Because the pull and the spend
+are one transaction, nothing is ever stranded in the contract. A successor with
+the post graduation route has to be deployed at that point, and the fee wallet
+moves its approval to it.
+
 ## The guardian
 
 One address. It can pause, unpause, set `maxNotional`, hand over to another

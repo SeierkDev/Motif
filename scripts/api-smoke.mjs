@@ -291,13 +291,13 @@ for (const feed of ['buys', 'sells']) {
     indexer: ['lastBlock', 'lastRunAt', 'secondsSinceRun', 'error', 'configError', 'configWarning'],
     keeper: [
       'enabled', 'address', 'state', 'keyError', 'stoppedReason', 'throttle',
-      'fired', 'lastSweepAt', 'secondsSinceSweep', 'watching', 'recent',
+      'fired', 'lastSweepAt', 'secondsSinceSweep', 'watching', 'recent', 'burn',
     ],
     levels: [
       'lastSweepAt', 'secondsSinceSweep', 'motifsPriced', 'pointsRecorded',
       'curvePointsRecorded', 'recordingSince', 'error',
     ],
-    chain: ['rpc', 'router', 'rebalancer', 'orders', 'factory'],
+    chain: ['rpc', 'router', 'rebalancer', 'orders', 'factory', 'burner'],
     storage: ['total', 'main', 'wal', 'images'],
   }
   const { body: status } = await get('/v1/status')
@@ -382,6 +382,43 @@ if (inceptions.length === 0) {
       `  ok  averageMoveBps (${statsForAvg.averageMoveBps}) agrees with the motifs it averages`,
     )
   }
+}
+
+/*
+ * /v1/burns adds up.
+ *
+ * The totals are the one figure anybody will quote, so they are checked against
+ * the rows they claim to sum rather than trusted. The fixture's second burn
+ * destroyed more than it bought, which is a gift of MOTIF burned with the
+ * purchase, and the route has to carry both numbers rather than one.
+ */
+{
+  checked++
+  const { status, body } = await get('/v1/burns?limit=500')
+  const rows = body?.burns ?? []
+  const sum = (k) => rows.reduce((a, r) => a + BigInt(r[k]), 0n).toString()
+  const problems = []
+  if (status !== 200) problems.push(`answered ${status}`)
+  if (rows.length === 0) problems.push('returned no burns from a fixture that has two')
+  if (body?.totals?.burns !== rows.length) {
+    problems.push(`totals.burns is ${body?.totals?.burns} for ${rows.length} rows`)
+  }
+  if (rows.some((r) => typeof r.usdgIn !== 'string' || typeof r.motifBurned !== 'string')) {
+    problems.push('an amount is not a decimal string')
+  } else {
+    if (body?.totals?.usdgIn !== sum('usdgIn')) {
+      problems.push(`totals.usdgIn ${body?.totals?.usdgIn} is not the sum ${sum('usdgIn')}`)
+    }
+    if (body?.totals?.motifBurned !== sum('motifBurned')) {
+      problems.push(`totals.motifBurned ${body?.totals?.motifBurned} is not the sum ${sum('motifBurned')}`)
+    }
+    if (!rows.some((r) => BigInt(r.motifBurned) > BigInt(r.motifBought))) {
+      problems.push('no row carries a burn larger than its purchase')
+    }
+  }
+  if (rows.length > 1 && rows[0].block < rows[1].block) problems.push('not newest first')
+  if (problems.length) fail(`/v1/burns ${problems.join('; ')}`)
+  else console.log(`  ok  /v1/burns totals are the sum of its ${rows.length} rows`)
 }
 
 console.log(

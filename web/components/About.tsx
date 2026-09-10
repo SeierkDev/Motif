@@ -312,7 +312,7 @@ export function About() {
             },
             {
               q: 'What does it cost?',
-              a: 'The creator fee, up to 1%, plus 0.1% to the protocol, both on the buy. Selling costs nothing beyond the pool fee and the gas.',
+              a: 'The creator fee, up to 1%, plus 0.1% to the protocol, both on the buy. The protocol share is spent buying MOTIF and burning it, by a contract with no owner and no withdrawal, and every burn is on chain. Selling costs nothing beyond the pool fee and the gas.',
             },
             {
               q: 'What if a stock splits?',

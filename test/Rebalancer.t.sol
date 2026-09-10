@@ -206,11 +206,17 @@ contract RebalancerForkTest is Test {
 
     /// The trap this phase exists for: a split must freeze trading, not trigger it.
     function test_a_split_freezes_rebalancing() public {
+        // Whatever the chain said at subscribe time, not 1e18. That was true
+        // until NVDA took its first real adjustment, 1.000775e18 on 10 Sep
+        // 2026, and a constant here turned a live dividend into a red build.
+        uint256 recorded = rb.multiplierAt(holder, NVDA);
+        assertGt(recorded, 0, "nothing was recorded at subscribe time");
+
         // A two for one split doubles the multiplier.
         vm.mockCall(NVDA, abi.encodeWithSignature("uiMultiplier()"), abi.encode(uint256(2e18)));
 
         vm.prank(keeper);
-        vm.expectRevert(abi.encodeWithSelector(Rebalancer.CorporateActionPending.selector, NVDA, 1e18, 2e18));
+        vm.expectRevert(abi.encodeWithSelector(Rebalancer.CorporateActionPending.selector, NVDA, recorded, 2e18));
         rb.rebalance(holder);
 
         (bool ok, string memory why) = rb.shouldRebalance(holder);

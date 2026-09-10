@@ -9,7 +9,7 @@ import {
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import type { DB } from './db.js'
-import { config } from './indexer.js'
+import { burnerAddress, config } from './indexer.js'
 import { chainPace, isRefusal } from './rpc.js'
 
 const ordersAbi = parseAbi([
@@ -20,12 +20,32 @@ const rebalancerAbi = parseAbi([
   'function shouldRebalance(address holder) view returns (bool ok, string why)',
   'function rebalance(address holder)',
 ])
+const burnerAbi = parseAbi([
+  'function ready() view returns (bool ok, uint256 amount, string why)',
+  'function burn(uint256 minMotifOut) returns (uint256 bought)',
+])
 
 const SWEEP_MS = Number(process.env.MOTIF_KEEPER_MS ?? 20_000)
 /** Never spend more than this on one attempt, whatever the chain says. */
 const GAS_CAP = BigInt(process.env.MOTIF_KEEPER_GAS_CAP ?? 3_000_000)
 /** Stop after this many failures in a row rather than burning gas on a loop. */
 const FAILURE_LIMIT = 5
+
+/**
+ * How often the burner is asked whether there is enough to burn. Five minutes
+ * rather than every sweep: a burn is not time critical, the ten dollar minimum
+ * takes ten thousand dollars of volume to fill, and every ask is one more read
+ * against the only public rpc this chain has.
+ */
+const BURN_EVERY_MS = Number(process.env.MOTIF_BURN_MS ?? 300_000)
+
+/**
+ * How far under the simulated purchase the real one may land. The simulation
+ * and the send are seconds apart and a fifty dollar purchase is too small to be
+ * worth anybody's sandwich, measured in test/Burner.t.sol, so this only has to
+ * absorb honest trades that land in between.
+ */
+const BURN_SLIPPAGE_BPS = 300n
 
 /**
  * How far the sweep backs off when the endpoint refuses, and how far it will
@@ -198,6 +218,19 @@ export class Keeper {
   fired = 0
   stopped: string | null = null
 
+  /**
+   * The burn half, kept apart from orders on purpose. A burn that keeps
+   * failing, because the curve graduated or the fee wallet revoked its
+   * approval, is no reason to stop firing somebody's stop loss, and one shared
+   * failure count would have made it one.
+   */
+  private burnNextAt = 0
+  private burnFailures = 0
+  burnStopped: string | null = null
+  burnsSent = 0
+  private burnCheckedAt = 0
+  private burnState: { ok: boolean; amount: string; why: string } | null = null
+
   constructor(private db: DB) {
     const raw = (process.env.MOTIF_KEEPER_KEY ?? '').trim()
     this.reader = createPublicClient({ transport: http(config.RPC) }) as PublicClient
@@ -245,10 +278,12 @@ export class Keeper {
     // A refused key was already reported in full at the point it was refused.
     if (this.keyError !== null) return
     if (!this.enabled) {
-      console.log('[keeper] no MOTIF_KEEPER_KEY set, orders will not fire')
+      console.log('[keeper] no MOTIF_KEEPER_KEY set, orders will not fire and fees will not be burned')
       return
     }
     console.log(`[keeper] running as ${this.address}`)
+    const burner = burnerAddress()
+    if (burner !== null) console.log(`[keeper] burning protocol fees through ${burner}`)
     const tick = () => {
       this.sweep().finally(() => {
         this.timer = setTimeout(tick, this.nextSweepMs)
@@ -270,16 +305,26 @@ export class Keeper {
   }
 
   async sweep(): Promise<void> {
-    if (this.running || !this.enabled || this.stopped) return
+    if (this.running || !this.enabled) return
+    // Each half has its own stop, so the sweep only has nothing to do when
+    // both have given up. Returning on `stopped` alone, as this used to, would
+    // have let a stopped order keeper silently stop the burn with it.
+    if (this.stopped && (this.burnStopped || burnerAddress() === null)) return
     this.running = true
     try {
-      const orders = this.db.all('SELECT id FROM orders WHERE active = 1 ORDER BY id') as Row[]
-      for (const row of orders) await this.tryOrder(row.id!)
+      if (!this.stopped) {
+        const orders = this.db.all('SELECT id FROM orders WHERE active = 1 ORDER BY id') as Row[]
+        for (const row of orders) await this.tryOrder(row.id!)
 
-      const subs = this.db.all('SELECT holder FROM subscriptions WHERE active = 1') as Row[]
-      for (const row of subs) await this.tryRebalance(row.holder!)
+        const subs = this.db.all('SELECT holder FROM subscriptions WHERE active = 1') as Row[]
+        for (const row of subs) await this.tryRebalance(row.holder!)
 
-      this.lastSweepAt = Date.now()
+        // Only the order half moves this. It is what `secondsSinceSweep`
+        // reports, and a stopped keeper must not look like it is still sweeping.
+        this.lastSweepAt = Date.now()
+      }
+
+      await this.tryBurn()
     } finally {
       this.running = false
     }
@@ -381,6 +426,104 @@ export class Keeper {
     }
   }
 
+  /**
+   * Burn the protocol fee once there is enough of it.
+   *
+   * Asks the contract first, because `ready` is a free view and says why not,
+   * then simulates the burn for the one number worth protecting: what this
+   * exact state would buy. The send carries that less the slippage allowance as
+   * its floor, so the purchase cannot land far under what was just quoted.
+   */
+  private async tryBurn() {
+    const burner = burnerAddress() as Address | null
+    if (burner === null || this.burnStopped) return
+    if (Date.now() < this.burnNextAt) return
+    this.burnNextAt = Date.now() + BURN_EVERY_MS
+
+    let ok = false
+    try {
+      await chainPace.next()
+      const [ready, amount, why] = (await this.reader.readContract({
+        address: burner,
+        abi: burnerAbi,
+        functionName: 'ready',
+      })) as [boolean, bigint, string]
+      this.gotThrough()
+      this.burnCheckedAt = Date.now()
+      this.burnState = { ok: ready, amount: amount.toString(), why }
+      ok = ready
+    } catch (e) {
+      // A refusal is the endpoint, and backs off like every other read.
+      // Anything else is the burner itself not answering, which is almost
+      // always MOTIF_BURNER pointing at something that is not a burner. Said
+      // in status rather than swallowed: otherwise no burn would ever happen
+      // and nothing anywhere would say why.
+      if (isRefusal(e)) {
+        this.onRefusal(e)
+      } else {
+        this.burnCheckedAt = Date.now()
+        const detail = (e as Error).message?.split('\n')[0] ?? 'failed'
+        this.burnState = { ok: false, amount: '0', why: `could not read the burner: ${detail}` }
+      }
+      return
+    }
+    if (!ok) return
+
+    try {
+      await chainPace.next()
+      const sim = await this.reader.simulateContract({
+        address: burner,
+        abi: burnerAbi,
+        functionName: 'burn',
+        args: [0n],
+        account: this.address!,
+      })
+      const floor = (sim.result * (10_000n - BURN_SLIPPAGE_BPS)) / 10_000n
+      const hash = await this.wallet!.writeContract({
+        address: burner,
+        abi: burnerAbi,
+        functionName: 'burn',
+        args: [floor],
+        chain: null,
+        account: this.wallet!.account!,
+        gas: GAS_CAP,
+      })
+      const receipt = await this.reader.waitForTransactionReceipt({ hash })
+      if (receipt.status !== 'success') {
+        this.onBurnFailure(new Error(`reverted on chain in ${hash}`))
+        return
+      }
+      this.burnsSent++
+      this.burnFailures = 0
+      // Asked again on the next sweep rather than in five minutes, so a backlog
+      // above the fifty dollar ceiling drains one burn per sweep.
+      this.burnNextAt = 0
+      const dollars = (Number(this.burnState?.amount ?? 0) / 1e6).toFixed(2)
+      this.log('burn', burner, true, hash, `burned ${dollars} USDG of protocol fees`)
+      console.log(`[keeper] burned ${dollars} USDG of protocol fees in ${hash}`)
+    } catch (e) {
+      this.onBurnFailure(e as Error)
+    }
+  }
+
+  /** The same shape as `onFailure`, against the burn's own count and stop. */
+  private onBurnFailure(e: Error) {
+    const burner = burnerAddress() ?? 'burner'
+    if (isRefusal(e)) {
+      this.onRefusal(e)
+      this.log('burn', burner, false, null, 'the rpc refused the send, backing off')
+      return
+    }
+    const detail = e.message.split('\n')[0] ?? 'failed'
+    this.burnFailures++
+    this.log('burn', burner, false, null, detail)
+    console.error(`[keeper] burn failed: ${detail}`)
+    if (this.burnFailures >= FAILURE_LIMIT) {
+      this.burnStopped = `stopped after ${this.burnFailures} consecutive failures: ${detail}`
+      console.error(`[keeper] burning has ${this.burnStopped}`)
+    }
+  }
+
   /** A read got through, so whatever the endpoint was doing, it has stopped. */
   private gotThrough() {
     if (this.nextSweepMs !== SWEEP_MS) {
@@ -443,6 +586,9 @@ export class Keeper {
     this.stopped = null
     this.failures = 0
     this.nextSweepMs = SWEEP_MS
+    this.burnStopped = null
+    this.burnFailures = 0
+    this.burnNextAt = 0
   }
 
   status() {
@@ -487,6 +633,26 @@ export class Keeper {
         : null,
       watching: { openOrders: open, subscriptions: subs },
       recent,
+      // Its own block and its own state, because a stopped burn is not a
+      // stopped keeper and must never read as one, in either direction.
+      burn: {
+        burner: burnerAddress(),
+        state:
+          burnerAddress() === null
+            ? 'no burner'
+            : !this.enabled
+              ? 'no key'
+              : this.burnStopped
+                ? 'stopped'
+                : 'watching',
+        stoppedReason: this.burnStopped,
+        lastCheckAt: this.burnCheckedAt || null,
+        ready: this.burnState?.ok ?? null,
+        // USDG in six decimals, as a decimal string like every amount here.
+        availableUsdg: this.burnState?.amount ?? null,
+        why: this.burnState?.why ?? null,
+        sent: this.burnsSent,
+      },
     }
   }
 }

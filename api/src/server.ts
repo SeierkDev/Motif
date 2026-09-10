@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { WebSocketServer, type WebSocket } from 'ws'
 import { isAddress, verifyMessage } from 'viem'
 import { appliedMigrations, dbBytes, type DB } from './db.js'
-import { config, factoryAddress, hasFactory, type Event, type Indexer } from './indexer.js'
+import { burnerAddress, config, factoryAddress, hasFactory, type Event, type Indexer } from './indexer.js'
 import type { Keeper } from './keeper.js'
 import type { Levels } from './levels.js'
 
@@ -826,6 +826,48 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
         return body
       },
     ],
+    /**
+     * Every burn of the protocol fee, newest first, and what they add up to.
+     *
+     * @remarks Amounts are decimal strings, USDG in six decimals and ETH and
+     * MOTIF in eighteen, and the totals are summed as BigInt for the reason
+     * `/v1/stats` sums that way. `burner` is null when none is configured, which
+     * a client has to show as not running rather than as nothing burned.
+     */
+    [
+      /^\/v1\/burns$/,
+      (_m, url) => {
+        const limit = num(url.searchParams.get('limit'), 50, 500)
+        const all = db.all('SELECT usdg_in, motif_burned FROM burns') as {
+          usdg_in: string
+          motif_burned: string
+        }[]
+        const rows = db.all(
+          `SELECT tx, log_index, caller, usdg_in, eth_spent, motif_bought, motif_burned, block, ts
+             FROM burns ORDER BY block DESC, log_index DESC LIMIT ?`,
+          [limit],
+        ) as Record<string, unknown>[]
+        return {
+          burner: burnerAddress(),
+          totals: {
+            burns: all.length,
+            usdgIn: sumText(all.map((r) => r.usdg_in)),
+            motifBurned: sumText(all.map((r) => r.motif_burned)),
+          },
+          burns: rows.map((r) => ({
+            tx: r.tx,
+            logIndex: r.log_index,
+            caller: r.caller,
+            usdgIn: r.usdg_in,
+            ethSpent: r.eth_spent,
+            motifBought: r.motif_bought,
+            motifBurned: r.motif_burned,
+            block: r.block,
+            ts: r.ts,
+          })),
+        }
+      },
+    ],
     [
       /^\/v1\/status$/,
       () => ({
@@ -837,7 +879,7 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
           indexer.lastError === null &&
           indexer.configError === null &&
           keeper.keyError === null &&
-          (!keeper.enabled || keeper.stopped === null),
+          (!keeper.enabled || (keeper.stopped === null && keeper.burnStopped === null)),
         // Named honestly: an indexer that has stalled is not healthy just
         // because the http server still answers.
         indexer: {
@@ -867,6 +909,9 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
           // configWarning. Echoing the raw variable claimed a factory was
           // configured while nothing was being scanned for launches at all.
           factory: factoryAddress(),
+          // Optional in the same way, and null when none is configured: nothing
+          // is indexed or triggered, and /v1/burns is empty rather than broken.
+          burner: burnerAddress(),
         },
         migrations: appliedMigrations(db),
         uptimeSeconds: Math.round((Date.now() - started) / 1000),
@@ -1257,6 +1302,7 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
         'GET /v1/indexes/:id/sells',
         'GET /v1/rebalances',
         'GET /v1/holders/:address',
+        'GET /v1/burns',
         'GET /v1/stats',
         'GET /v1/status',
         'GET /v1/images/:sha256',

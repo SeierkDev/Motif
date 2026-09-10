@@ -75,6 +75,7 @@ a zero balance of every token after a full run.
 | **`packages/sdk`** | Typed client for the API plus contract ABIs. Builds transactions, never signs. |
 | **`Orders.sol`** | Limit, stop, trailing stop and TWAP, triggered on the pool so they fire when the exchange is shut. |
 | **`Guarded.sol`** | A kill switch and a size cap. It cannot move anything. |
+| **`MotifBurner.sol`** | Spends the protocol's 0.10% on MOTIF and burns it. Pulls from the fee wallet by allowance, $10 to $50 a call, no owner and no withdrawal. |
 | **`web/`** | Next.js app: launch, browse, buy, sell, track. Every motif has its own url and its own link card. |
 
 ## Three things that are easy to get wrong
@@ -108,6 +109,7 @@ Robinhood Chain 4663
         ├── BasketRouter ── buy() ── one tx, N swaps, output to the buyer
         │                  └ sell() ── one tx back out, no fee, no custody
         ├── Rebalancer ──── rebalance() ── allowance only, permissionless keeper
+        ├── MotifBurner ─── burn() ── the protocol fee, bought as MOTIF and burned
         │
    api/ indexer ── 5,000 block windows ── SQLite ── REST + WS
         │
@@ -225,6 +227,11 @@ reports `state: "bad key"` with the reason. It is not fatal either way. The
 service still comes up and still records levels, which is the only state here
 that cannot be rebuilt from the chain later.
 
+**`MOTIF_BURNER` turns on the fee burn.** It is the address the deploy burner
+workflow prints. Unset, nothing is burned and `/v1/status` says `no burner`. It
+needs no key of its own: the keeper's key calls it, and the fee wallet approves
+it once from wherever that wallet lives.
+
 **Use a dedicated rpc.** The public endpoint rate limits under real load and is
 not an archive node, so a long lived indexer will start seeing 429s and
 `metadata is not found`.
@@ -242,16 +249,29 @@ MOTIF trades on Pons.
 
 <https://www.ponsfamily.com/launchpad/0x89565a7BBfddab021844e2f66a79852e46C802df>
 
-**It is not part of the protocol, and that is worth being exact about.** Nothing
-in `src/` reads this address. No fee is routed to it, no function checks a
-balance of it, and holding it grants no claim on a motif, on a basket token or
-on anything the contracts hold, which is nothing in any case. Every contract in
-this repository behaves identically whether the token exists or not.
+**The protocol fee buys it and burns it.** Every motif purchase pays 0.10% to
+the protocol, in USDG, to a fee wallet the router fixes forever.
+`src/MotifBurner.sol` spends it. Once $10 is waiting, anyone may call `burn`,
+which pulls the fees, swaps them to ETH, buys MOTIF on its curve and destroys
+everything it bought, all in one transaction. `totalSupply` goes down, and the
+contract keeps a running count that anybody can read. At most $50 a call,
+because a burn larger than about $93 would be worth sandwiching on the curve and
+one this size measurably is not. The keeper runs it every five minutes.
 
-It shares a name with the project and that is the whole of the relationship.
-Anyone auditing the custody claim above should be able to confirm that by
-grepping for the address and finding it only here and in `web/lib/contracts.ts`,
-where it exists to render one link in the footer.
+**Burner** `0xbcE61D891bD6a7E3D99604eaBfd87804FE78A552`, pulling from the fee wallet `0x9BC511c81C9780910A9385F1347031e4B830F113`. Both are
+public, so the fees arriving and the fees leaving can be watched from either
+end, and the burner's own `burns()`, `usdgSpent()` and `motifBurned()` are the
+running totals.
+
+**It is still not part of the protocol, and that is worth being exact about.**
+The router, the rebalancer, orders, the factory, the curves and the vaults never
+read this address. Holding MOTIF grants no claim on a motif, on a basket token
+or on anything the contracts hold, which is nothing in any case. The burner sits
+downstream of the protocol's own fee and touches nothing else: not a buyer's
+funds, not a creator's fee, not a vault. Remove it and every other contract
+behaves identically, and the fee wallet simply keeps its fees. The two trust
+assumptions it does add, the fee wallet's approval and the Pons curve, are
+written out in `docs/03-threat-model.md`.
 
 ## What it does not do
 

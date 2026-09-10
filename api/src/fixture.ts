@@ -64,6 +64,7 @@ for (const table of [
   'motif_levels',
   'motif_basis',
   'price_snapshots',
+  'burns',
   'keeper_log',
   'subscriptions',
   'orders',
@@ -258,11 +259,30 @@ for (const p of curvePoints) {
   db.run('INSERT OR REPLACE INTO curve_levels (curve, at, price18, floor18) VALUES (?, ?, ?, ?)', p)
 }
 
+/**
+ * Two burns, so /v1/burns has a total to add up and an order to keep.
+ *
+ * The second destroyed more than it bought, which is what a gift of MOTIF sent
+ * to the contract looks like, and the route has to carry both figures. The
+ * first is the numbers the fork test actually produced for twenty five dollars.
+ */
+const burnRows: [string, number, string, string, string, string, string, number, number][] = [
+  ['0x' + 'b1'.repeat(32), 3, BOB, '25000000', '10104000000000000', '1360445000000000000000000', '1360445000000000000000000', BLOCK + 70, T0 + 700],
+  ['0x' + 'b2'.repeat(32), 5, ALICE, '50000000', '20208000000000000', '2700000000000000000000000', '2835000000000000000000000', BLOCK + 80, T0 + 800],
+]
+for (const b of burnRows) {
+  db.run(
+    `INSERT INTO burns (tx, log_index, caller, usdg_in, eth_spent, motif_bought, motif_burned, block, ts)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    b,
+  )
+}
+
 const n = (q: string) => (db.get(q) as { n: number }).n
 console.log(
   `[fixture] ${path}: ${n('SELECT COUNT(*) AS n FROM indexes')} motifs, ` +
     `${n('SELECT COUNT(*) AS n FROM buys')} buys, ${n('SELECT COUNT(*) AS n FROM sells')} sells, ` +
     `${n('SELECT COUNT(*) AS n FROM orders')} orders, ${n('SELECT COUNT(*) AS n FROM motif_levels')} levels, ` +
-    `${n('SELECT COUNT(*) AS n FROM curves')} curves`,
+    `${n('SELECT COUNT(*) AS n FROM curves')} curves, ${n('SELECT COUNT(*) AS n FROM burns')} burns`,
 )
 db.close()

@@ -55,6 +55,28 @@ export function factoryProblem(): string | null {
   )
 }
 
+/**
+ * The burner, optional for the same reason the factory is.
+ *
+ * Unset means no burns are indexed or triggered and `/v1/burns` is empty,
+ * which is the truth on any deployment that has not got one. A value that is
+ * set and is not an address is a typo, and is reported the way the factory's
+ * is rather than read as a decision.
+ */
+const BURNER = (process.env.MOTIF_BURNER ?? '').trim()
+export const hasBurner = (): boolean => isAddress(BURNER)
+
+/** The burner actually being indexed and kept, and null when there is not one. */
+export const burnerAddress = (): string | null => (hasBurner() ? BURNER : null)
+
+export function burnerProblem(): string | null {
+  if (BURNER === '' || isAddress(BURNER)) return null
+  return (
+    `MOTIF_BURNER is not an address: ${JSON.stringify(BURNER)}. ` +
+    'No burns are being indexed or triggered and /v1/burns is empty.'
+  )
+}
+
 /** How often the moving half of a curve's state is re-read. */
 const CURVE_REFRESH_MS = 20_000
 
@@ -213,6 +235,9 @@ const totalSupplyAbi = [
 const cancelled = parseAbiItem('event Cancelled(uint256 indexed id)')
 const filled = parseAbiItem(
   'event Filled(uint256 indexed id, uint256 amountIn, uint256 amountOut, uint256 price18)',
+)
+const burned = parseAbiItem(
+  'event Burned(address indexed caller, uint256 usdgIn, uint256 ethSpent, uint256 motifBought, uint256 motifBurned)',
 )
 
 const orderStateAbi = [
@@ -661,6 +686,37 @@ export class Indexer {
             block: Number(log.blockNumber),
           })
         }
+      }
+    }
+
+    // A burn is one row and never changes, so like a launch it is written
+    // from the log alone and needs no call back into the chain.
+    if (hasBurner()) {
+      const burnLogs = await this.paced(() =>
+        this.client.getLogs({
+          address: BURNER as `0x${string}`,
+          event: burned,
+          fromBlock: from,
+          toBlock: to,
+        }),
+      )
+      for (const log of burnLogs) {
+        this.db.run(
+          `INSERT OR IGNORE INTO burns
+             (tx, log_index, caller, usdg_in, eth_spent, motif_bought, motif_burned, block, ts)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            log.transactionHash!,
+            log.logIndex!,
+            log.args.caller!.toLowerCase(),
+            log.args.usdgIn!.toString(),
+            log.args.ethSpent!.toString(),
+            log.args.motifBought!.toString(),
+            log.args.motifBurned!.toString(),
+            Number(log.blockNumber),
+            tsOf(log as never),
+          ],
+        )
       }
     }
 

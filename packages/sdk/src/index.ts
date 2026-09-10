@@ -139,6 +139,32 @@ export type Creator = {
   lastLaunchTs: number
 }
 
+/**
+ * One burn of the protocol fee, off the burner's own `Burned` log.
+ *
+ * `motifBurned` can exceed `motifBought`: the contract burns everything it
+ * holds, so MOTIF sent to it before a call is destroyed along with that call's
+ * purchase. USDG is six decimals, ETH and MOTIF eighteen, all decimal strings.
+ */
+export type Burn = {
+  tx: string
+  logIndex: number
+  caller: string
+  usdgIn: string
+  ethSpent: string
+  motifBought: string
+  motifBurned: string
+  block: number
+  ts: number
+}
+
+export type Burns = {
+  /** Null when the api has no burner configured, which is not the same as none burned. */
+  burner: string | null
+  totals: { burns: number; usdgIn: string; motifBurned: string }
+  burns: Burn[]
+}
+
 export type Stats = {
   indexes: number
   buys: number
@@ -207,6 +233,22 @@ export type Status = {
       detail: string
       tx: string | null
     }[]
+    /**
+     * The protocol fee burn, run from the same key on a slower timer. Kept out
+     * of `state` above on purpose: a stopped burn is not a stopped keeper, and
+     * neither may hold the other up.
+     */
+    burn: {
+      burner: string | null
+      state: 'no burner' | 'no key' | 'stopped' | 'watching'
+      stoppedReason: string | null
+      lastCheckAt: number | null
+      ready: boolean | null
+      /** USDG, six decimals, as a decimal string. */
+      availableUsdg: string | null
+      why: string | null
+      sent: number
+    }
   }
   /** The price recorder. The one piece of state here that cannot be rebuilt. */
   levels: {
@@ -229,6 +271,8 @@ export type Status = {
     rebalancer: string
     orders: string
     factory: string | null
+    /** Null when none is configured: no burns are indexed or triggered. */
+    burner: string | null
   }
   /**
    * What the data actually occupies, in bytes.
@@ -401,6 +445,11 @@ export class MotifClient {
 
   stats() {
     return this.get<Stats>('/v1/stats')
+  }
+
+  /** Every burn of the protocol fee, newest first, with the totals. */
+  burns(limit = 50) {
+    return this.get<Burns>(`/v1/burns?limit=${limit}`)
   }
 
   status() {

@@ -1,5 +1,5 @@
 import { open } from './db.js'
-import { factoryProblem, Indexer, parseFromBlock, type Event } from './indexer.js'
+import { burnerProblem, factoryProblem, Indexer, parseFromBlock, type Event } from './indexer.js'
 import { createApi } from './server.js'
 import { Keeper } from './keeper.js'
 import { Levels } from './levels.js'
@@ -81,7 +81,7 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
 // is created but before it is answering, so that throw killed the process on
 // boot and the deploy failed as a healthcheck timeout.
 const from = parseFromBlock(process.env.MOTIF_FROM_BLOCK)
-const warnings = [from.problem, factoryProblem()].filter((w): w is string => w !== null)
+const warnings = [from.problem, factoryProblem(), burnerProblem()].filter((w): w is string => w !== null)
 if (warnings.length > 0) {
   indexer.configWarning = warnings.join('; ')
   for (const w of warnings) console.warn(`[indexer] ${w}`)

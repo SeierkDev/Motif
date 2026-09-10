@@ -23,6 +23,7 @@ GET /v1/indexes/:id/sells
 GET /v1/rebalances?limit=50
 GET /v1/orders?owner=0x...
 GET /v1/holders/:address
+GET /v1/burns?limit=50
 GET /v1/stats
 GET /v1/status
 GET /v1/curves?limit=60
@@ -329,6 +330,15 @@ value still wrapped in the quotes it was pasted with, and one that lost its `0x`
 prefix. Both are logged at boot as something to go and fix, because a variable
 that works by repair is one nobody corrects.
 
+`keeper.burn` is the protocol fee burn, and it sits outside `keeper.state` on
+purpose: a stopped burn is not a stopped keeper, and neither may hold the other
+up. Its `state` is `no burner` without `MOTIF_BURNER`, `no key` without a keeper
+key, `stopped` after five consecutive failures, and `watching` otherwise. `why`
+is the contract's own answer, read every five minutes, to whether a burn would
+go through; `the fee wallet has not approved this contract` and `under the ten
+dollar minimum` are the two you will see most. A stopped burn makes `ok` false,
+the same as a stopped keeper does.
+
 `error` carries the last failure and is cleared on the next success, so a
 flapping rpc is visible rather than smoothed away.
 
@@ -354,6 +364,34 @@ stays true. It used to cost rather more: the value went straight to `BigInt()`
 at the top level of `main.ts`, which throws on anything that is not a number,
 before the http server was answering. A placeholder there killed the process on
 boot and the deploy failed as a healthcheck timing out after five minutes.
+
+## `/v1/burns`
+
+Every burn of the protocol fee, newest first, and what they add up to.
+
+```json
+{
+  "burner": "0x...",
+  "totals": { "burns": 2, "usdgIn": "75000000", "motifBurned": "4195445000000000000000000" },
+  "burns": [
+    { "tx": "0x...", "logIndex": 5, "caller": "0x...", "usdgIn": "50000000",
+      "ethSpent": "20208000000000000", "motifBought": "2700000000000000000000000",
+      "motifBurned": "2835000000000000000000000", "block": 55000080, "ts": 1780000800 }
+  ]
+}
+```
+
+`burner` is null when the api has no `MOTIF_BURNER`, which means nothing is
+indexed or triggered. That is not the same claim as nothing burned, and a
+client should say which one it is showing.
+
+USDG is six decimals, ETH and MOTIF eighteen, all decimal strings. `motifBurned`
+can be larger than `motifBought`, because the contract burns everything it
+holds: MOTIF sent to it before a call goes with that call's purchase, and both
+numbers are carried so the difference shows.
+
+The contract keeps the same totals itself, readable as `burns()`, `usdgSpent()`
+and `motifBurned()`, so this route is a convenience and the chain is the record.
 
 ## Rate limit
 
