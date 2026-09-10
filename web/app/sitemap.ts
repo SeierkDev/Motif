@@ -33,7 +33,7 @@ export const dynamic = 'force-dynamic'
  * that is still being traded reads as current.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const fixed = ['', '/explore', '/tokens', '/tokens/new', '/launch', '/orders', '/how'].map((path) => ({
+  const fixed = ['', '/explore', '/tokens', '/tokens/new', '/launch', '/orders', '/how', '/proof'].map((path) => ({
     url: `${SITE}${path}`,
     changeFrequency: 'daily' as const,
     priority: path === '' ? 1 : 0.7,

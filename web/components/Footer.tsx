@@ -29,6 +29,7 @@ export function Footer() {
           <Link href="/orders">Orders</Link>
           <Link href="/portfolio">Portfolio</Link>
           <Link href="/how">How it works</Link>
+          <Link href="/proof">Proof</Link>
         </div>
 
         <div className="foot-col">
