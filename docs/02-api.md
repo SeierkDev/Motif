@@ -431,9 +431,28 @@ Orders and subscriptions are indexed but not streamed. They are a keeper work
 list rather than something a public feed should be pushing, and somebody's stop
 loss is not a thing to broadcast the moment it is placed.
 
-The server pings every 30 seconds. A client that disappears without a close
-frame would otherwise sit in the subscriber set forever and make the
-`subscribers` count a lie.
+The server pings every 30 seconds, and a client that has not answered the
+previous ping when the next one is due is dropped, so a dead one is gone within
+a minute. Any browser or websocket library answers pings on its own, so a client
+has nothing to do for this.
+
+That last part is new. It used to ping and never check for an answer, which
+dropped nobody: a ping is written into the socket whether or not anyone is at
+the other end, so a tab behind a closed laptop lid stayed a subscriber, and was
+sent every broadcast, until the operating system gave up on the connection.
+Five clients that went silent after the handshake were all still counted
+seventy five seconds and two pings later. `scripts/check-connections.mjs` runs
+in CI against a one second heartbeat and fails if a silent client survives, or
+if a client that does answer is dropped.
+
+A client that stops reading is dropped once a megabyte of events is waiting for
+it, rather than having everything after that queued in the one process serving
+everybody.
+
+Idle kept-alive http connections are held for 65 seconds. Node's default is
+five, which is shorter than the proxy in front holds its own idle connections,
+and when the server closes one just as the proxy reuses it, that request comes
+back as a 502 that never reached the api at all.
 
 ## SDK
 

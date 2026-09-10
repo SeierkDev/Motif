@@ -249,6 +249,7 @@ jobs:
           cd api
           DATA_DIR=/tmp/motif-fixture-main \
           MOTIF_RPC=http://127.0.0.1:59999 \
+          MOTIF_WS_HEARTBEAT_MS=1000 \
           npx tsx src/main.ts > /tmp/api.log 2>&1 &
           echo $! > /tmp/api.pid
           for i in $(seq 1 40); do
@@ -260,6 +261,15 @@ jobs:
           exit 1
 
       - run: node scripts/api-smoke.mjs
+
+      # How the api treats connections, which no route test sees. A live feed
+      # client that goes silent used to be kept, and sent every broadcast, for
+      # as long as the operating system held the socket; an idle kept-alive
+      # connection was closed at Node's five second default, which is shorter
+      # than a proxy's and turns into intermittent 502s. The api above runs
+      # with a one second heartbeat so this takes seconds rather than a minute.
+      - name: dead live feed clients are dropped, and idle connections outlast the proxy
+        run: MOTIF_WS_HEARTBEAT_MS=1000 node scripts/check-connections.mjs
 
       # The routes answering is one thing. The api staying up with no chain
       # behind it is another, and it is the reason an rpc blip at deploy time no

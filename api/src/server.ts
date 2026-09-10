@@ -458,6 +458,27 @@ export function clearResponseCache(): void {
   statsCache = null
 }
 
+/**
+ * How often each live feed client is pinged. A client that has not answered one
+ * ping by the time the next is due is dropped, so a dead one is gone within two
+ * of these. Settable so CI can watch that happen in seconds rather than a minute.
+ */
+const WS_HEARTBEAT_MS = Number(process.env.MOTIF_WS_HEARTBEAT_MS ?? 30_000)
+
+/**
+ * Past this much unsent, a live feed client is not keeping up, and it is
+ * dropped rather than having every later event queued for it in this process.
+ * A megabyte is thousands of events; a working tab never gets near it.
+ */
+const WS_MAX_BUFFERED = 1024 * 1024
+
+/**
+ * How long an idle kept-alive connection is held. Longer than the proxy in
+ * front holds its idle upstream connections, for the reason written out where
+ * it is applied.
+ */
+const KEEP_ALIVE_MS = 65_000
+
 export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Levels, port: number) {
   const sockets = new Set<WebSocket>()
   // Every motif row carries its own performance, so a caller never has to make
@@ -1321,9 +1342,32 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
   wss.on('connection', (ws) => {
     sockets.add(ws)
     ws.send(JSON.stringify({ kind: 'hello', lastBlock: indexer.cursor }))
-    // A dead client that never sends a close frame otherwise sits in the set
-    // forever and the subscriber count becomes a lie.
-    const ping = setInterval(() => ws.ping(), 30_000)
+    /*
+     * A heartbeat that listens for the answer.
+     *
+     * This used to ping every thirty seconds and never check that anything
+     * came back, under a comment saying it kept dead clients out of the set.
+     * It did not. A ping is written into the socket whether or not anybody is
+     * at the other end, so a tab behind a closed laptop lid stayed a
+     * subscriber, and was sent every broadcast, until the operating system
+     * gave up on the connection, which can take hours. Measured: five clients
+     * that went silent after the handshake were all still counted seventy five
+     * seconds and two pings later.
+     *
+     * Now a client that has not answered the previous ping when the next one
+     * is due is terminated, which fires `close` and the cleanup below. A
+     * browser answers pings on its own, underneath any page code, so a working
+     * tab is never touched by this.
+     */
+    let answered = true
+    ws.on('pong', () => {
+      answered = true
+    })
+    const ping = setInterval(() => {
+      if (!answered) return ws.terminate()
+      answered = false
+      ws.ping()
+    }, WS_HEARTBEAT_MS)
     ws.on('close', () => {
       clearInterval(ping)
       sockets.delete(ws)
@@ -1342,7 +1386,15 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
     clearResponseCache()
     const msg = JSON.stringify(e)
     for (const ws of sockets) {
-      if (ws.readyState === ws.OPEN) ws.send(msg)
+      if (ws.readyState !== ws.OPEN) continue
+      // A client that has stopped reading would otherwise have every event
+      // queued for it here without limit, in the one process serving everyone.
+      // The heartbeat drops it within a minute; this covers that minute.
+      if (ws.bufferedAmount > WS_MAX_BUFFERED) {
+        ws.terminate()
+        continue
+      }
+      ws.send(msg)
     }
   }
 
@@ -1357,6 +1409,24 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
     }
   }, IMAGE_SWEEP_MS)
   sweeper.unref?.()
+
+  /*
+   * Keep-alive longer than the proxy's.
+   *
+   * Node closes an idle kept-alive connection after five seconds by default.
+   * This runs behind a proxy, and proxies commonly hold idle upstream
+   * connections for sixty seconds or more and reuse them for the next request.
+   * When the server closes one at the moment the proxy picks it up, that
+   * request fails as a 502, and nothing about it appears in this log because
+   * it never reached a handler. Measured: an idle connection was closed at
+   * 5.0 seconds.
+   *
+   * So the server outlasts the proxy and the proxy is always the side that
+   * closes. The header timeout has to be longer still, or Node applies it
+   * first and the keep-alive setting does nothing.
+   */
+  server.keepAliveTimeout = KEEP_ALIVE_MS
+  server.headersTimeout = KEEP_ALIVE_MS + 1_000
 
   server.listen(port, () => console.log(`[api] listening on ${port}`))
   return { server, broadcast, subscribers: () => sockets.size }
