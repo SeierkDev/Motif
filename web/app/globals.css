@@ -15,6 +15,51 @@
   --bad: #ff5f56;
   --sans: 'Space Grotesk', system-ui, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Colours that used to be written straight into rules further down, turned
+     into variables so the light theme can answer each one. These are the dark
+     values, which is the default and what the server renders. */
+  --glass: rgba(8, 9, 11, .72);
+  --fade: rgba(8, 9, 11, 0);
+  --edge: rgba(233, 236, 241, .13);
+  --shadow: rgba(0, 0, 0, .5);
+  --shadow-deep: rgba(0, 0, 0, .9);
+  --wash-a: rgba(204, 255, 51, .13);
+  --wash-b: rgba(83, 138, 255, .11);
+  --wash-c: rgba(140, 92, 255, .09);
+  color-scheme: dark;
+}
+
+/* Light. Every colour on the site is one of the variables above, so the whole
+   theme is this block, and nothing below it knows which theme is on.
+
+   Picked against the ground rather than by inverting. The accent is the one
+   that had to move: #ccff33 is barely visible as text on white, so it deepens
+   to a lime that reads at about 5 to 1, and the ink on accent buttons turns
+   white to sit on it. Shadows go from black to a faint slate, because a black
+   shadow on a white page reads as a smudge rather than as depth. */
+:root[data-theme='light'] {
+  --ground: #f6f7f9;
+  --panel: #ffffff;
+  --panel-2: #eef0f4;
+  --line: #e2e5eb;
+  --line-2: #cfd4dc;
+  --text: #0e1116;
+  --dim: #555d6b;
+  --dimmer: #7c8492;
+  --accent: #4d7c0f;
+  --accent-ink: #ffffff;
+  --warm: #c2560c;
+  --bad: #d92d20;
+  --glass: rgba(246, 247, 249, .82);
+  --fade: rgba(246, 247, 249, 0);
+  --edge: rgba(14, 17, 22, .10);
+  --shadow: rgba(15, 23, 42, .10);
+  --shadow-deep: rgba(15, 23, 42, .16);
+  --wash-a: rgba(101, 163, 13, .10);
+  --wash-b: rgba(83, 138, 255, .08);
+  --wash-c: rgba(140, 92, 255, .06);
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -52,9 +97,9 @@ body::before {
   content: '';
   position: fixed; inset: 0; z-index: -1; pointer-events: none;
   background:
-    radial-gradient(1000px 680px at 6% -12%, rgba(204, 255, 51, .13), transparent 60%),
-    radial-gradient(820px 600px at 94% 2%, rgba(83, 138, 255, .11), transparent 58%),
-    radial-gradient(1300px 860px at 52% 112%, rgba(140, 92, 255, .09), transparent 62%);
+    radial-gradient(1000px 680px at 6% -12%, var(--wash-a), transparent 60%),
+    radial-gradient(820px 600px at 94% 2%, var(--wash-b), transparent 58%),
+    radial-gradient(1300px 860px at 52% 112%, var(--wash-c), transparent 62%);
 }
 
 a { color: inherit; text-decoration: none; }
@@ -93,7 +138,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
      an opaque bar punches a flat black rectangle through the top of that wash.
      No blur: there is nothing moving underneath to blur, so it would be a
      compositing cost per frame for nothing. */
-  background: rgba(8, 9, 11, .72);
+  background: var(--glass);
   border-bottom: 1px solid var(--line);
 }
 .bar-in {
@@ -122,12 +167,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-family: var(--mono); font-size: 13px;
   background: var(--accent); color: var(--accent-ink);
   border: none; border-radius: 999px; padding: 9px 16px; font-weight: 700;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 6px 18px -7px rgba(204, 255, 51, .5);
+  box-shadow: 0 1px 2px var(--shadow), 0 6px 18px -7px color-mix(in srgb, var(--accent) 50%, transparent);
 }
 .connect.ghost {
   background: transparent; color: var(--text);
   border: 1px solid var(--line-2);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, .45);
+  box-shadow: 0 1px 2px var(--shadow);
 }
 .mark-img { display: block; border-radius: 7px; }
 /* "Connect wallet" is 138px, and at 320 the row needs 334 in a 320 viewport, so
@@ -207,17 +252,17 @@ label { display: block; font-size: 12px; font-family: var(--mono);
   background: var(--accent); color: var(--accent-ink);
   border: none; border-radius: 999px; padding: 11px 22px;
   font-weight: 700; font-size: 14px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 6px 20px -6px rgba(204, 255, 51, .45);
+  box-shadow: 0 1px 2px var(--shadow), 0 6px 20px -6px color-mix(in srgb, var(--accent) 45%, transparent);
   transition: transform .14s ease, box-shadow .14s ease, filter .14s ease;
 }
-.btn:hover { transform: translateY(-1px); box-shadow: 0 1px 2px rgba(0,0,0,.5), 0 10px 26px -6px rgba(204, 255, 51, .6); }
+.btn:hover { transform: translateY(-1px); box-shadow: 0 1px 2px var(--shadow), 0 10px 26px -6px color-mix(in srgb, var(--accent) 60%, transparent); }
 .btn:active { transform: translateY(0); }
 .btn:disabled { opacity: .35; cursor: not-allowed; box-shadow: none; transform: none; }
 .btn.ghost {
   background: transparent; color: var(--text); border: 1px solid var(--line-2);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 6px 18px -8px rgba(0, 0, 0, .9);
+  box-shadow: 0 1px 2px var(--shadow), 0 6px 18px -8px var(--shadow-deep);
 }
-.btn.ghost:hover { border-color: var(--dimmer); box-shadow: 0 1px 2px rgba(0,0,0,.5), 0 10px 24px -8px rgba(0,0,0,.9); }
+.btn.ghost:hover { border-color: var(--dimmer); box-shadow: 0 1px 2px var(--shadow), 0 10px 24px -8px var(--shadow-deep); }
 @media (prefers-reduced-motion: reduce) {
   .btn, .btn:hover, .btn:active { transform: none; transition: none; }
 }
@@ -373,10 +418,10 @@ label { display: block; font-size: 12px; font-family: var(--mono);
 /* ----------------------------------------------------------------- notice */
 
 .notice {
-  border-left: 2px solid var(--warm); background: rgba(255, 138, 61, .06);
+  border-left: 2px solid var(--warm); background: color-mix(in srgb, var(--warm) 6%, transparent);
   padding: 12px 14px; font-size: 13px; color: var(--dim); border-radius: 0 4px 4px 0;
 }
-.notice.bad { border-left-color: var(--bad); background: rgba(255, 95, 86, .06); }
+.notice.bad { border-left-color: var(--bad); background: color-mix(in srgb, var(--bad) 6%, transparent); }
 .notice b { color: var(--text); font-weight: 500; }
 
 .strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
@@ -493,10 +538,10 @@ th.n { text-align: right; }
 .scroll-x {
   overflow-x: auto;
   background:
-    linear-gradient(to right, var(--ground) 40%, rgba(8, 9, 11, 0)) left center / 28px 100% no-repeat local,
-    linear-gradient(to left, var(--ground) 40%, rgba(8, 9, 11, 0)) right center / 28px 100% no-repeat local,
-    linear-gradient(to right, rgba(233, 236, 241, .13), rgba(8, 9, 11, 0)) left center / 14px 100% no-repeat scroll,
-    linear-gradient(to left, rgba(233, 236, 241, .13), rgba(8, 9, 11, 0)) right center / 14px 100% no-repeat scroll;
+    linear-gradient(to right, var(--ground) 40%, var(--fade)) left center / 28px 100% no-repeat local,
+    linear-gradient(to left, var(--ground) 40%, var(--fade)) right center / 28px 100% no-repeat local,
+    linear-gradient(to right, var(--edge), var(--fade)) left center / 14px 100% no-repeat scroll,
+    linear-gradient(to left, var(--edge), var(--fade)) right center / 14px 100% no-repeat scroll;
 }
 
 /* A table of four or five numeric columns has no honest layout at 390: the
@@ -561,7 +606,7 @@ th.n { text-align: right; }
 }
 
 .paused {
-  background: rgba(255, 138, 61, .12); border-bottom: 1px solid var(--warm);
+  background: color-mix(in srgb, var(--warm) 12%, transparent); border-bottom: 1px solid var(--warm);
   color: var(--text); font-size: 13px; padding: 10px 24px; line-height: 1.5;
 }
 .paused b { color: var(--warm); }
@@ -712,7 +757,7 @@ th.n { text-align: right; }
   transition: border-color .12s ease, background .12s ease;
 }
 .pick:hover { border-color: var(--line-2); }
-.pick.on { border-color: var(--accent); background: rgba(204, 255, 51, .07); }
+.pick.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .pick-sym { display: block; font-size: 14px; font-weight: 500; }
 .pick.on .pick-sym { color: var(--accent); }
 .pick-name {
@@ -753,7 +798,7 @@ th.n { text-align: right; }
   border: none; cursor: grab;
 }
 .slider:focus { outline: none; }
-.slider:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px rgba(204, 255, 51, .18); }
+.slider:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
 
 .preview { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
 .preview .side-label { margin-bottom: 10px; }
@@ -1048,7 +1093,7 @@ th.n { text-align: right; }
 .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 8px; }
 
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dimmer); flex: 0 0 auto; }
-.dot.on { background: var(--accent); box-shadow: 0 0 0 3px rgba(204, 255, 51, .14); }
+.dot.on { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
 
 /* Holds the space the intro is about to take, so resolving the first render
    does not jump the page. Roughly the height of the hero and its stat panel;
@@ -1072,7 +1117,7 @@ th.n { text-align: right; }
   display: inline-flex; align-items: center; gap: 8px;
   padding: 6px 10px; border: 1px solid var(--line-2); border-radius: 8px;
   font-family: var(--mono); font-size: 12px; line-height: 1;
-  color: var(--dim); background: rgba(204, 255, 51, .04);
+  color: var(--dim); background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 .ca:hover { color: var(--text); border-color: var(--accent) }
 .ca-k { color: var(--accent); letter-spacing: .12em }
@@ -1097,3 +1142,24 @@ th.n { text-align: right; }
   .burn-card .calc-row { flex-direction: column; align-items: flex-start; gap: 4px; }
   .burn-card .calc-row .num { white-space: nowrap; }
 }
+
+/* The theme toggle, and the mark that goes with each theme.
+
+   Both marks and both icons are always in the markup, and these rules show the
+   right one. Deciding in CSS rather than in React is what keeps the server
+   render and the browser in agreement: the server cannot know what a visitor
+   chose, and a component that picked an image from local storage would render
+   one thing on the server and another on the first paint. */
+.mark-img.mark-light { display: none; }
+:root[data-theme='light'] .mark-img.mark-dark { display: none; }
+:root[data-theme='light'] .mark-img.mark-light { display: block; }
+
+.theme-toggle { background: none; border: 0; padding: 0; cursor: pointer; font: inherit; }
+/* Shows where a click goes: a sun while it is dark, a moon while it is light. */
+.theme-toggle .moon { display: none; }
+:root[data-theme='light'] .theme-toggle .sun { display: none; }
+:root[data-theme='light'] .theme-toggle .moon { display: block; }
+
+/* A tile's monogram is white at 30% over a dark wash. Over the light wash that
+   is nothing at all, so in light it goes to ink at about the same strength. */
+:root[data-theme='light'] .tile-mark { color: rgba(14, 17, 22, .26); }

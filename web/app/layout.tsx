@@ -5,6 +5,7 @@ import { Header } from '@/components/Header'
 import { HashRedirect } from '@/components/HashRedirect'
 import { Footer } from '@/components/Footer'
 import { SITE } from '@/lib/meta'
+import { THEME_BOOT } from '@/lib/theme'
 
 const description =
   'Launch an index of tokenised equities in one transaction and earn a fee on every purchase. Buyers hold the real tokens in their own wallet, and can sell the whole basket back in one transaction.'
@@ -44,7 +45,13 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    // Dark is what the server renders and the default. The script applies a
+    // saved light choice before the first paint, which is also why the root
+    // is allowed to differ from the server's markup on this one attribute.
+    <html lang="en" data-theme="dark" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+      </head>
       <body>
         <Providers>
           <HashRedirect />

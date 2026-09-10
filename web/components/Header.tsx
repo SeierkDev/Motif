@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { useAccount, useConnect, useDisconnect, useReadContract, useSwitchChain } from 'wagmi'
 import { activeChain } from '@/lib/chain'
 import { addresses, basketRouterAbi, sourceUrl, TOKEN_ADDRESS, tokenUrl, xUrl } from '@/lib/contracts'
+import { THEME_KEY } from '@/lib/theme'
 
 const NAV = [
   { href: '/', label: 'Explore' },
@@ -38,8 +39,38 @@ const NAV = [
  *      optimiser's srcset and lazy loading buy nothing at this size.
  */
 function Mark() {
-  /* eslint-disable-next-line @next/next/no-img-element */
-  return <img className="mark-img" src="/logo.png" alt="Motif" width={40} height={40} />
+  // Two files, and the stylesheet shows the one that belongs to the theme.
+  // Half of the dark mark is white, which is nothing at all on a light ground,
+  // so the light one is the same artwork with that half in ink and the lime
+  // deepened to read on white.
+  return (
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="mark-img mark-dark" src="/logo.png" alt="Motif" width={40} height={40} />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="mark-img mark-light" src="/logo-light.png" alt="" aria-hidden="true" width={40} height={40} />
+    </>
+  )
+}
+
+/**
+ * Flip between light and dark, and remember it in this browser.
+ *
+ * The attribute on the root is the whole of the switch: every colour is a
+ * variable and the light values sit under `[data-theme='light']`. The script in
+ * layout.tsx reads the same key before the first paint, so the choice holds on
+ * the next visit without a dark flash first.
+ */
+function toggleTheme() {
+  const root = document.documentElement
+  const next = root.dataset.theme === 'light' ? 'dark' : 'light'
+  root.dataset.theme = next
+  try {
+    localStorage.setItem(THEME_KEY, next)
+  } catch {
+    // Storage refused, as in some private windows. It still switches for this
+    // visit; it just will not be remembered.
+  }
 }
 
 /**
@@ -283,6 +314,31 @@ export function Header() {
               />
             </svg>
           </a>
+
+          {/* Light or dark. Both icons are always in the markup and the
+              stylesheet shows the right one, so the server render matches
+              whichever theme the visitor picked. */}
+          <button
+            type="button"
+            className="ico theme-toggle"
+            onClick={toggleTheme}
+            aria-label="Switch between light and dark"
+            title="Light or dark"
+          >
+            <svg className="sun" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" strokeWidth="2" />
+              <path
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"
+              />
+            </svg>
+            <svg className="moon" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1Z" />
+            </svg>
+          </button>
 
           {isConnected ? (
             <button className="connect ghost" onClick={() => disconnect()} title={address}>
