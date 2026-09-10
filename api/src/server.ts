@@ -506,27 +506,19 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
                 ? 'i.ts DESC, i.id DESC'
                 : 'COALESCE(agg.volume_sort, 0) DESC'
         const rows = db.all(
+          // One row per motif from the running totals, rather than every buy
+          // it ever had. See totals.ts for why these cannot drift.
           `SELECT i.*,
                   COALESCE(agg.buys, 0)    AS buys,
-                  agg.volume_parts         AS volume_parts,
+                  agg.volume               AS volume_parts,
                   agg.volume_sort          AS volume_sort,
-                  agg.fees_parts           AS fees_parts,
+                  agg.fees                 AS fees_parts,
                   agg.fees_sort            AS fees_sort,
                   COALESCE(agg.holders, 0) AS holders,
                   agg.last_buy_ts          AS lastBuyTs
              FROM indexes i
-             LEFT JOIN (
-               SELECT index_id,
-                      COUNT(*)                          AS buys,
-                      GROUP_CONCAT(amount_in)           AS volume_parts,
-                      GROUP_CONCAT(creator_fee)         AS fees_parts,
-                      SUM(CAST(amount_in AS REAL))      AS volume_sort,
-                      SUM(CAST(creator_fee AS REAL))    AS fees_sort,
-                      COUNT(DISTINCT buyer)             AS holders,
-                      MAX(ts)                           AS last_buy_ts
-                 FROM buys GROUP BY index_id
-             ) agg ON agg.index_id = i.id
-            ORDER BY ${order}
+             LEFT JOIN index_totals agg ON agg.index_id = i.id
+            ORDER BY ${order}, i.id DESC
             LIMIT ?`,
           [byReturn ? 500 : limit],
         )
@@ -567,18 +559,12 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
         creators: db.all(
           `SELECT i.creator,
                   COUNT(DISTINCT i.id)              AS launched,
-                  GROUP_CONCAT(agg.fees_parts)      AS fees_parts,
-                  GROUP_CONCAT(agg.volume_parts)    AS volume_parts,
+                  GROUP_CONCAT(agg.fees)            AS fees_parts,
+                  GROUP_CONCAT(agg.volume)          AS volume_parts,
                   MAX(i.ts)                         AS lastLaunchTs
              FROM indexes i
-             LEFT JOIN (
-               SELECT index_id,
-                      GROUP_CONCAT(creator_fee) AS fees_parts,
-                      GROUP_CONCAT(amount_in)   AS volume_parts,
-                      SUM(CAST(creator_fee AS REAL)) AS fees_sort
-                 FROM buys GROUP BY index_id
-             ) agg ON agg.index_id = i.id
-            GROUP BY i.creator ORDER BY SUM(agg.fees_sort) DESC LIMIT ?`,
+             LEFT JOIN index_totals agg ON agg.index_id = i.id
+            GROUP BY i.creator ORDER BY SUM(agg.fees_sort) DESC, i.creator DESC LIMIT ?`,
           [num(url.searchParams.get('limit'), 50, 200)],
         ).map((c) => {
           const { volume_parts, fees_parts, volume_sort, fees_sort, ...rest } = c as Record<string, unknown>
@@ -592,15 +578,10 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
         const who = m[1]!.toLowerCase()
         const rows = db.all(
           `SELECT i.*, COALESCE(agg.buys, 0) AS buys,
-                  agg.volume_parts AS volume_parts,
-                  agg.fees_parts   AS fees_parts
+                  agg.volume AS volume_parts,
+                  agg.fees   AS fees_parts
              FROM indexes i
-             LEFT JOIN (
-               SELECT index_id, COUNT(*) AS buys,
-                      GROUP_CONCAT(amount_in) AS volume_parts,
-                      GROUP_CONCAT(creator_fee) AS fees_parts
-                 FROM buys GROUP BY index_id
-             ) agg ON agg.index_id = i.id
+             LEFT JOIN index_totals agg ON agg.index_id = i.id
             WHERE i.creator = ? ORDER BY i.id DESC`,
           [who],
         )
@@ -614,7 +595,7 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
       (_m, url) => {
         const limit = num(url.searchParams.get('limit'), 50, 200)
         const rows = db.all(
-          `SELECT i.*, (SELECT COUNT(*) FROM buys b WHERE b.index_id = i.id) AS buys
+          `SELECT i.*, COALESCE((SELECT t.buys FROM index_totals t WHERE t.index_id = i.id), 0) AS buys
              FROM indexes i ORDER BY i.id DESC LIMIT ?`,
           [limit],
         )
@@ -627,17 +608,11 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
         const row = db.get(
           `SELECT i.*,
                   COALESCE(agg.buys, 0)    AS buys,
-                  agg.volume_parts         AS volume_parts,
-                  agg.fees_parts           AS fees_parts,
+                  agg.volume               AS volume_parts,
+                  agg.fees                 AS fees_parts,
                   COALESCE(agg.holders, 0) AS holders
              FROM indexes i
-             LEFT JOIN (
-               SELECT index_id, COUNT(*) AS buys,
-                      GROUP_CONCAT(amount_in)   AS volume_parts,
-                      GROUP_CONCAT(creator_fee) AS fees_parts,
-                      COUNT(DISTINCT buyer)          AS holders
-                 FROM buys GROUP BY index_id
-             ) agg ON agg.index_id = i.id
+             LEFT JOIN index_totals agg ON agg.index_id = i.id
             WHERE i.id = ?`,
           [Number(m[1])],
         )
@@ -748,6 +723,10 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
          * doing it once per visitor per poll. `/how` polls this, so at a
          * hundred readers it was a hundred full scans of the activity tables
          * every few seconds to produce a number that is identical every time.
+         *
+         * The buy and sell sums have since moved to the running totals in
+         * totals.ts, still BigInt and still exact, so what is left to scan
+         * here is `curves`, which grows with launches rather than with trades.
          */
         const now = Date.now()
         if (statsCache && now - statsCache.at < STATS_TTL_MS) return statsCache.body
@@ -755,10 +734,11 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
         const one = (q: string) => (db.get(q) as { n: number } | undefined)?.n ?? 0
         const body = {
           indexes: one('SELECT COUNT(*) AS n FROM indexes'),
-          buys: one('SELECT COUNT(*) AS n FROM buys'),
-          sells: one('SELECT COUNT(*) AS n FROM sells'),
+          // The site wide sums come from the running totals, not a scan.
+          buys: one('SELECT buys AS n FROM totals WHERE id = 1'),
+          sells: one('SELECT sells AS n FROM totals WHERE id = 1'),
           rebalances: one('SELECT COUNT(*) AS n FROM rebalances'),
-          uniqueBuyers: one('SELECT COUNT(DISTINCT buyer) AS n FROM buys'),
+          uniqueBuyers: one('SELECT COUNT(*) AS n FROM buyers'),
           // Creators of either kind. A basket token publishes its index from
           // inside the curve, so `indexes.creator` for one of those is the
           // curve's own address rather than a person, and counting only that
@@ -774,16 +754,10 @@ export function createApi(db: DB, indexer: Indexer, keeper: Keeper, levels: Leve
           raisedOnCurves: sumText(
             (db.all('SELECT raised FROM curves') as { raised: string }[]).map((r) => r.raised),
           ),
-          volumeIn: sumText(
-            (db.all('SELECT amount_in FROM buys') as { amount_in: string }[]).map((r) => r.amount_in),
-          ),
+          volumeIn: (db.get('SELECT volume_in AS v FROM totals WHERE id = 1') as { v: string } | undefined)?.v ?? '0',
           // Reported separately rather than netted off. Money in and money out
           // are two facts, and a single "net volume" hides which one moved.
-          volumeOut: sumText(
-            (db.all('SELECT amount_out FROM sells') as { amount_out: string }[]).map(
-              (r) => r.amount_out,
-            ),
-          ),
+          volumeOut: (db.get('SELECT volume_out AS v FROM totals WHERE id = 1') as { v: string } | undefined)?.v ?? '0',
 
           /*
            * How the published motifs have moved, on average, since each was

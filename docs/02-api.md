@@ -125,6 +125,35 @@ return is computed from the level series rather than stored, so it is not a
 column. Those two pull the top 500 rows, rank in process, and **drop every motif
 with no reading yet** rather than sorting it into the middle as if it were flat.
 
+Ties are broken by id, newest first, so two motifs with the same number of buys
+come back in the same order every time rather than whichever order SQLite
+happened to produce.
+
+**What it costs does not grow with trading.** This route, both creator routes,
+`/v1/indexes/:id` and `/v1/stats` read running totals (`api/src/totals.ts`)
+rather than adding up every buy on every request. Before, each cache miss
+concatenated every amount ever bought, split it again and summed it in BigInt,
+and because the database is synchronous every other request, `/healthz`
+included, waited for it. Measured on 300,000 buys across 300 motifs, cache
+bypassed:
+
+| | before | after |
+|---|---|---|
+| `/v1/leaderboard?by=volume` | 3,126 ms | 170 ms |
+| `/v1/creators` | 2,787 ms | 5 ms |
+| `/v1/creators/:address` | 2,354 ms | 14 ms |
+| `/v1/indexes/:id` | 2,591 ms | 5 ms |
+| `/v1/stats` | 655 ms | 21 ms |
+| `/healthz`, asked during a leaderboard miss | 3,014 ms | 105 ms |
+
+Every response body was identical before and after, byte for byte, apart from
+the tie order above. The sums stay exact: TEXT in SQLite, BigInt in JavaScript,
+with a float copy kept only to sort by. They are rebuilt from the rows on every
+boot (`[totals] rebuilt from N buys` in the log), and in between the indexer
+moves them only for a row that was actually new, so the sixty block re-scan
+cannot count a buy twice. CI checks them against a direct sum and against a
+replay one buy at a time (`api/src/check-totals.ts`).
+
 ## `/v1/trending`
 
 Activity inside a window, so something launched this morning can outrank

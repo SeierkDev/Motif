@@ -240,7 +240,7 @@ jobs:
       # it teaches you to ignore the job. They get a copy each now.
       - run: |
           cd api
-          for d in main badkey placeholder; do
+          for d in main badkey placeholder totals; do
             npx tsx src/fixture.ts "/tmp/motif-fixture-$d/motif.sqlite"
           done
 
@@ -261,6 +261,13 @@ jobs:
           exit 1
 
       - run: node scripts/api-smoke.mjs
+
+      # The running totals the leaderboard, creator, motif and stats routes
+      # read, checked against the rows they summarise: summed directly, and
+      # replayed one buy at a time through the functions the indexer calls.
+      # On its own copy of the fixture, for the lock reason above.
+      - name: running totals equal the rows they summarise
+        run: cd api && npx tsx src/check-totals.ts /tmp/motif-fixture-totals/motif.sqlite
 
       # How the api treats connections, which no route test sees. A live feed
       # client that goes silent used to be kept, and sent every broadcast, for

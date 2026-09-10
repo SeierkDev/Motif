@@ -3,11 +3,17 @@ import { burnerProblem, factoryProblem, Indexer, parseFromBlock, type Event } fr
 import { createApi } from './server.js'
 import { Keeper } from './keeper.js'
 import { Levels } from './levels.js'
+import { rebuildTotals } from './totals.js'
 
 const PORT = Number(process.env.PORT ?? 8787)
 const DATA = process.env.DATA_DIR ?? './data'
 
 const db = open(`${DATA}/motif.sqlite`)
+
+// The running totals the aggregating routes read, rebuilt from the rows on
+// every boot so nothing in them can outlive a restart. See totals.ts.
+const rebuilt = rebuildTotals(db)
+console.log(`[totals] rebuilt from ${rebuilt.buys} buys in ${rebuilt.ms}ms`)
 
 // The broadcaster does not exist until the api is built, and the indexer needs
 // somewhere to send events, so it starts out pointing at a stub.

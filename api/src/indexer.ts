@@ -1,6 +1,7 @@
 import { createPublicClient, http, isAddress, parseAbiItem, type PublicClient } from 'viem'
 import type { DB } from './db.js'
 import { chainPace } from './rpc.js'
+import { addBuy, addSell } from './totals.js'
 
 /**
  * What a fresh anvil deterministically produces, which is why these can be
@@ -779,7 +780,7 @@ export class Indexer {
     }
 
     for (const log of buys) {
-      this.db.run(
+      const inserted = this.db.run(
         `INSERT OR IGNORE INTO buys
            (tx, log_index, index_id, buyer, amount_in, creator_fee, protocol_fee, block, ts)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -795,6 +796,17 @@ export class Indexer {
           tsOf(log as never),
         ],
       )
+      // Only a row that was actually new moves the totals. The last sixty
+      // blocks are re-read every pass, and those replays were ignored above.
+      if (inserted.changes === 1) {
+        addBuy(this.db, {
+          index_id: Number(log.args.id!),
+          buyer: log.args.buyer!.toLowerCase(),
+          amount_in: log.args.amountIn!.toString(),
+          creator_fee: log.args.creatorFee!.toString(),
+          ts: tsOf(log as never),
+        })
+      }
       if (log.blockNumber! > emitAbove) this.onEvent({
         kind: 'buy',
         id: Number(log.args.id!),
@@ -805,7 +817,7 @@ export class Indexer {
     }
 
     for (const log of sells) {
-      this.db.run(
+      const inserted = this.db.run(
         `INSERT OR IGNORE INTO sells
            (tx, log_index, index_id, seller, legs, amount_out, block, ts)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -820,6 +832,7 @@ export class Indexer {
           tsOf(log as never),
         ],
       )
+      if (inserted.changes === 1) addSell(this.db, log.args.amountOut!.toString())
       if (log.blockNumber! > emitAbove) this.onEvent({
         kind: 'sell',
         id: Number(log.args.id!),
